@@ -2,11 +2,11 @@
 
 Multi-server NFT role bot. English commands, no wallet connection, no signing request, no spending approvals.
 
-## Current status — Lot 1
+## Current status — Lots 1–2
 
-Implemented: private `/help`, strict configuration, server-scoped settings, PostgreSQL migration, graceful shutdown, command registration script, unit tests, Docker Compose and CI.
+Implemented: private `/help`, `/wallet add|list|remove|verify`, persistent ten-minute challenges, Ethereum/Polygon native self-transfer verification, strict configuration, server-scoped storage, migrations, graceful shutdown, Docker Compose and CI.
 
-**Not implemented yet:** wallet proof, NFT counting, role management, admin commands, periodic jobs. Do not use this foundation to gate access in production.
+**Not implemented yet:** NFT counting, role management, admin commands and periodic jobs. Do not use this preview to gate access in production.
 
 ## Requirements
 
@@ -18,6 +18,22 @@ Node.js 24.19+, npm, PostgreSQL 17, a Discord application and a dedicated test s
 4. Set the application ID, bot token and test guild ID.
 5. Run `npm run commands:deploy -- --guild`.
 6. Start with `npm run dev`. Try `/help` in the test server.
+
+## Wallet verification
+
+Configure one or both HTTPS RPC endpoints in `.env`: `ETHEREUM_RPC_URL` and `POLYGON_RPC_URL`. Use your Alchemy mainnet endpoints. A missing endpoint disables proof creation on that network without breaking `/help` or wallet management.
+
+1. `/wallet add network:polygon` opens a private address modal.
+2. The bot displays the exact native amount, the same address as sender/recipient, expiry and a transaction-submission button.
+3. Send the exact amount from your own wallet to itself; leave calldata empty. Native POL on Polygon or ETH on Ethereum only. Do not round, use an exchange withdrawal or send money to the bot. Gas is spent; the transferred amount stays in your wallet.
+4. Submit the transaction hash with the button or `/wallet verify challenge:… transaction:…`. If confirmations are insufficient, retry before expiry.
+5. `/wallet list` restores your pending instructions after a restart. `/wallet remove address:…` deactivates your own address and cancels its pending challenge.
+
+Proof acceptance requires a successful, canonical transaction in a block strictly after challenge creation's chain snapshot, with inclusion timestamp inside the ten-minute window. This preview requires **12 Ethereum / 64 Polygon confirmations and submission before expiry**. This is a confirmation policy, not guaranteed chain finality; send promptly. No automatic polling, transaction submission or wallet connection occurs.
+
+Standard externally owned addresses only: contracts and delegated wallets (including accounts with non-empty code) are refused at challenge creation. Five verified wallets maximum per member per server; one pending challenge per member; one pending reservation per address in a server; at most one new challenge per minute and ten per hour. Interactive requests have additional bounded concurrency and per-user rate limits.
+
+Proof hashes and challenge amounts remain single-use across the deployment, including after wallet removal. Addresses are unique among active members within a server, but can belong to the same holder in independent servers with separate proofs. Removing a wallet is currently a **deactivation**, not privacy erasure: proof history is retained for replay protection. A retention/erasure policy is required before commercial release.
 
 Invite the application with `bot` and `applications.commands` scopes. No privileged gateway intents are needed in this lot. Later, role management will need Manage Roles and a bot role above the roles it manages; do not grant Administrator to the bot.
 
@@ -37,7 +53,7 @@ Use `docker compose logs --tail=100 bot` to inspect startup. Database data lives
 
 ## Quality checks
 
-`npm run check` generates Prisma, typechecks, runs unit tests, checks formatting and builds. CI also applies migrations twice to a fresh PostgreSQL instance and builds Docker. External Discord/Alchemy calls are not performed by tests.
+`npm run check` generates Prisma, typechecks, runs unit tests, checks formatting and builds. CI also applies migrations twice to a fresh PostgreSQL instance, runs integration tests using the dedicated `TEST_DATABASE_URL`, and builds Docker. External Discord/Alchemy calls are not performed by tests. Never set `TEST_DATABASE_URL` to a live database: integration fixtures insert and delete test rows.
 
 ## Product decisions
 
@@ -50,12 +66,12 @@ Use `docker compose logs --tail=100 bot` to inspect startup. Database data lives
 - Server data is isolated by guild ID. Wallet uniqueness is enforced per guild in the next lot; a wallet may join independent communities.
 - No dashboard, billing, marketplace or distributed queue in the MVP.
 
-These decisions are the agreed implementation baseline, not a claim that the features already exist.
+Role-related decisions are the agreed baseline for later lots, not a claim that these features already exist. Wallet implementation details and limitations are described above.
 
 ## Structure and next lots
 
 `src/discord` holds interactions and English text; `src/storage.ts` holds persistence; `src/config.ts` validates runtime configuration. Prisma generates code into ignored `src/generated`.
 
-Lot 2 adds persisted wallets/challenges and transaction verification. Lot 3 adds holdings adapters, tier rules, admin commands and role refresh. Lot 4 adds durable scheduled jobs, quotas, retry policies and live test-server acceptance. Future modules should remain in this one deployable service until scaling creates a real need to split them.
+`src/wallets` separates proof policy, read-only RPC, transactional persistence and service limits. Lot 2 delivers wallet verification. Lot 3 adds holdings adapters, tier rules, admin commands and role refresh. Lot 4 adds durable scheduled jobs, quotas, retry policies and live test-server acceptance. Future modules should remain in this one deployable service until scaling creates a real need to split them.
 
 Before commercial release: verify data retention/privacy, RPC quotas and costs, backups, operational monitoring and multi-server authorization tests.

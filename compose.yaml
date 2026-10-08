@@ -30,6 +30,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL using hostname db}
       DISCORD_TOKEN: ${DISCORD_TOKEN:?Set DISCORD_TOKEN}
       DISCORD_APPLICATION_ID: ${DISCORD_APPLICATION_ID:?Set DISCORD_APPLICATION_ID}
+      ETHEREUM_RPC_URL: ${ETHEREUM_RPC_URL:-}
+      POLYGON_RPC_URL: ${POLYGON_RPC_URL:-}
     depends_on:
       migrate:
         condition: service_completed_successfully

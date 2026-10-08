@@ -67,7 +67,7 @@ describe("configuration", () => {
 
 describe("Discord foundation", () => {
   it("registers only implemented guild commands", () => {
-    expect(commands.map((command) => command.name)).toEqual(["help"]);
+    expect(commands.map((command) => command.name)).toEqual(["help", "wallet"]);
     expect(commands[0]?.contexts).toEqual([InteractionContextType.Guild]);
   });
   it("defers privately before persistence", async () => {

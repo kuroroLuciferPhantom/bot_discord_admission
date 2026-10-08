@@ -15,3 +15,38 @@ model GuildSettings {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+enum ChallengeStatus {
+  PENDING
+  VERIFIED
+  CANCELLED
+  EXPIRED
+}
+
+model Wallet {
+  guildId String
+  address String
+  userId String
+  active Boolean @default(true)
+  verifiedAt DateTime
+  @@id([guildId, address])
+  @@index([guildId, userId, active])
+}
+
+model WalletChallenge {
+  id String @id @default(uuid())
+  guildId String
+  userId String
+  address String
+  chainId Int
+  amountWei String
+  startBlock BigInt
+  createdAt DateTime
+  expiresAt DateTime
+  status ChallengeStatus @default(PENDING)
+  transactionHash String?
+  @@unique([chainId, amountWei])
+  @@unique([chainId, transactionHash])
+  @@index([guildId, userId, createdAt])
+  @@index([status, expiresAt])
+}
