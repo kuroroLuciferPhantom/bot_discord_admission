@@ -34,6 +34,21 @@ function interaction(
 }
 
 describe("configuration", () => {
+  it("requires explicit opt-in to the scheduler and rejects ambiguous values", () => {
+    expect(readConfig(env).SCHEDULER_ENABLED).toBeUndefined();
+    expect(
+      readConfig({ ...env, SCHEDULER_ENABLED: "" }).SCHEDULER_ENABLED,
+    ).toBeUndefined();
+    expect(
+      readConfig({ ...env, SCHEDULER_ENABLED: "true" }).SCHEDULER_ENABLED,
+    ).toBe("true");
+    expect(
+      readConfig({ ...env, SCHEDULER_ENABLED: "false" }).SCHEDULER_ENABLED,
+    ).toBe("false");
+    expect(() => readConfig({ ...env, SCHEDULER_ENABLED: "yes" })).toThrow(
+      "SCHEDULER_ENABLED",
+    );
+  });
   it("accepts valid configuration", () => expect(readConfig(env)).toEqual(env));
   it.each(["DISCORD_TOKEN", "DISCORD_APPLICATION_ID", "DATABASE_URL"])(
     "requires %s without leaking values",

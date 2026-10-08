@@ -33,6 +33,7 @@ services:
       ETHEREUM_RPC_URL: ${ETHEREUM_RPC_URL:-}
       POLYGON_RPC_URL: ${POLYGON_RPC_URL:-}
       ALCHEMY_API_KEY: ${ALCHEMY_API_KEY:-}
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-false}
     depends_on:
       migrate:
         condition: service_completed_successfully

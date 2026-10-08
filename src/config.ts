@@ -30,6 +30,10 @@ const schema = z.object({
       .regex(/^[a-zA-Z0-9_-]{1,200}$/)
       .optional(),
   ),
+  SCHEDULER_ENABLED: z.preprocess(
+    (value) => (value === undefined || value === "" ? undefined : value),
+    z.enum(["true", "false"]).optional(),
+  ),
 });
 
 export function readConfig(env: NodeJS.ProcessEnv) {

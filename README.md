@@ -2,11 +2,11 @@
 
 Multi-server NFT role bot. English commands, no wallet connection, no signing request, no spending approvals.
 
-## Current status — Lots 1–3
+## Current status — Lots 1–4
 
-Implemented: private wallet verification, ERC-1155/ERC-721 counts through Alchemy, admin rules/settings, manual role refresh, automatic refresh on verified wallet changes, server-scoped storage, migrations, Docker Compose and CI.
+Implemented: private wallet verification, ERC-1155/ERC-721 counts through Alchemy, admin rules/settings, manual role refresh, automatic refresh on verified wallet changes, durable scheduled checks and retries, dormant members, server-scoped storage, migrations, Docker Compose and CI.
 
-**Not implemented yet:** periodic jobs and operational/commercial hardening. A real Discord/Alchemy acceptance test is still required before production.
+**Not implemented yet:** operational/commercial hardening. A real Discord/Alchemy acceptance test is still required before production. The scheduler is disabled by default until that acceptance test.
 
 ## Requirements
 
@@ -49,6 +49,7 @@ Configure `ALCHEMY_API_KEY` with Ethereum and Polygon NFT API access. Register c
 /rules remove id:…
 /settings role-stacking enabled:false
 /settings check-frequency times-per-week:2
+/settings status
 /roles refresh
 ```
 
@@ -62,7 +63,19 @@ The bot refuses managed roles, @everyone, roles above/equal to itself and admini
 
 Alchemy queries are contract-filtered, metadata-free and paginated. Failed, malformed, duplicated or truncated responses do not cause any role changes. There is a thirty-second inventory deadline, ten pages maximum per wallet/contract, twenty rules per server and a manual refresh cooldown of one minute. Counts rely on Alchemy's indexed ownership view, not an atomic multi-wallet block snapshot: recently transferred ERC-1155s can temporarily appear stale. Avoid promising instantaneous on-chain finality; live acceptance must check indexing behavior.
 
-**Run one bot replica.** A shared per-guild in-process gate prevents config/wallet mutations during a refresh; independent guilds can proceed with bounded concurrency. Multi-replica coordination is not implemented. `/settings check-frequency` saves the desired frequency but does not enable a scheduler yet.
+**Run one bot replica.** A shared per-guild in-process gate prevents config/wallet mutations during a refresh; independent guilds can proceed with bounded concurrency. Database job leases are not a substitute for multi-replica coordination of role/config/wallet effects.
+
+## Scheduled checks
+
+After applying migrations and testing on a dedicated Discord server, set `SCHEDULER_ENABLED=true` and restart the bot. `/settings check-frequency times-per-week:1` or `2` sets a rolling interval of seven days or three-and-a-half days after a successful check, not fixed calendar weekdays. `/settings status` is admin-only and shows scheduler enablement, active/dormant members, due checks, retries and the latest successful check.
+
+Only members registered by a role refresh are considered. Before reading Alchemy, scheduled checks fetch current Discord roles. Members with no managed roles or confirmed departed members become dormant: no further wallet polling until a successful `/roles refresh` (or refresh on wallet change) makes them eligible again. Dormant records and verified addresses remain stored; this is not privacy erasure. Existing holders who never ran a refresh are not automatically discovered.
+
+Scheduled checks **only remove** ineligible or obsolete managed roles. They never grant, promote, regrant or downgrade into an unheld tier. With stacking disabled, the highest eligible _currently held_ tier remains. Use `/roles refresh` to claim new roles. Config edits are evaluated on the next check or refresh, not broadcast immediately to all members.
+
+Due dates, five-minute claim leases and retry state persist in PostgreSQL. Startup resumes due work; expired leases are recoverable. The worker handles at most five jobs sequentially per batch, polling every minute, so backlogs can delay checks. API and partial Discord failures retry after 1 minute, 5 minutes, 30 minutes, 2 hours, 6 hours, then at most once daily; permission errors retry hourly, busy/config races after one minute. Failed checks preserve roles unless Discord already performed some individual removals before a partial failure. An interrupted check is reconciled after its lease expires. A failed wallet-change refresh queues an existing active holder for reconciliation but does not automatically reawaken a dormant member.
+
+Changing frequency reschedules future regular checks for that server without delaying overdue checks, retry timers or in-flight leases. Stopping or disabling the scheduler does not erase its queue. Graceful shutdown waits for the current job for up to the process's ten-second shutdown deadline; forced termination leaves an expiring lease. Logs use fixed event/error codes without wallet addresses or raw provider errors. External monitoring, alerting and a production runbook remain to be implemented.
 
 Command deployment **replaces this application's commands in the selected scope**. Use a dedicated application; global registration requires the explicit `--global` flag. Commands are never registered automatically at startup.
 
@@ -85,20 +98,20 @@ Use `docker compose logs --tail=100 bot` to inspect startup. Database data lives
 ## Product decisions
 
 - Self-transfer proof: Ethereum or Polygon, challenge valid for ten minutes. Native coin only; transaction must be successful, fresh and single-use.
-- ERC-1155 first, ERC-721 supported by the planned holdings adapter. ERC-20 deferred.
+- ERC-1155 first, ERC-721 supported. ERC-20 deferred.
 - Sum quantities over a member's verified wallets. ERC-1155 counts copies, not distinct IDs; rules can select IDs or the whole contract.
 - Admin-only rules: network, contract, minimum quantity, role and tier group. Stacking is configurable; non-stacking selects the highest eligible tier **within a group**, never across unrelated collections.
 - Check active role holders one or two times weekly. Members with no managed roles become dormant; `/roles refresh` reactivates them when eligible.
 - An RPC/API error is not evidence of lost ownership: preserve roles and retry.
-- Server data is isolated by guild ID. Wallet uniqueness is enforced per guild in the next lot; a wallet may join independent communities.
+- Server data is isolated by guild ID. Active wallet uniqueness is enforced per guild; a wallet may join independent communities with separate proofs.
 - No dashboard, billing, marketplace or distributed queue in the MVP.
 
-Periodic-check decisions are the baseline for Lot 4. Implemented wallet and role behavior and limitations are described above.
+Implemented wallet, role and periodic-check behavior and limitations are described above.
 
 ## Structure and next lots
 
 `src/discord` holds interactions and English text; `src/storage.ts` holds persistence; `src/config.ts` validates runtime configuration. Prisma generates code into ignored `src/generated`.
 
-`src/wallets` separates proof policy, read-only RPC, transactional persistence and service limits. `src/roles` separates holdings, rule evaluation, storage and Discord effects. Lot 4 adds durable scheduled jobs, retry policies and operational acceptance. Future modules should remain in this one deployable service until scaling creates a real need to split them.
+`src/wallets` separates proof policy, read-only RPC, transactional persistence and service limits. `src/roles` separates holdings, rule evaluation, storage and Discord effects. `src/jobs` separates durable claims, retry policy and bounded scheduling. Future modules should remain in this one deployable service until scaling creates a real need to split them.
 
 Before commercial release: verify data retention/privacy, RPC quotas and costs, backups, operational monitoring and multi-server authorization tests.

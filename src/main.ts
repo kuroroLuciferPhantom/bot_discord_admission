@@ -18,6 +18,8 @@ import { RoleService } from "./roles/service.js";
 import { createRoleRepository } from "./roles/repository.js";
 import { createRoleGateway } from "./roles/discord.js";
 import { createHoldingsReader } from "./roles/alchemy.js";
+import { createJobRepository } from "./jobs/repository.js";
+import { CheckWorker } from "./jobs/worker.js";
 import {
   walletModal,
   walletButton,
@@ -50,6 +52,10 @@ async function main() {
     () => new Date(),
     (guildId, task) => roles.gate.run(guildId, task),
   );
+  const worker = new CheckWorker(createJobRepository(db), roles, (event) =>
+    console.info(event),
+  );
+  roles.schedulerEnabled = config.SCHEDULER_ENABLED === "true";
   const handleWalletInteraction = async (
     interaction: ModalSubmitInteraction | ButtonInteraction,
   ) => {
@@ -87,6 +93,7 @@ async function main() {
     const deadline = setTimeout(() => process.exit(1), 10_000);
     deadline.unref();
     try {
+      await worker.stop();
       await client.destroy();
       await db.$disconnect();
     } catch {
@@ -102,7 +109,11 @@ async function main() {
   process.once("SIGTERM", () => {
     void shutdown();
   });
-  client.once(Events.ClientReady, () => console.info("Holder Bot connected."));
+  client.once(Events.ClientReady, () => {
+    console.info("Holder Bot connected.");
+    if (!closing && config.SCHEDULER_ENABLED === "true") worker.start();
+    else console.info("Scheduled checker disabled.");
+  });
   client.on(Events.Error, () => console.error("Discord client error."));
   client.on(Events.InteractionCreate, (interaction) => {
     if (closing) return;
@@ -123,6 +134,7 @@ async function main() {
   try {
     await db.$queryRaw`SELECT 1 FROM "GuildSettings" LIMIT 1`;
     await db.$queryRaw`SELECT 1 FROM "RoleRule" LIMIT 1`;
+    await db.$queryRaw`SELECT "nextCheckAt" FROM "RoleMember" LIMIT 1`;
     if (!closing) await client.login(config.DISCORD_TOKEN);
   } catch {
     await shutdown();

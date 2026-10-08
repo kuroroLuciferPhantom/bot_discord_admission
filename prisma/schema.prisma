@@ -42,6 +42,12 @@ model RoleMember {
   userId String
   lastCheckedAt DateTime?
   active Boolean @default(false)
+  nextCheckAt DateTime? @default(now())
+  leaseId String?
+  leaseUntil DateTime?
+  attempts Int @default(0)
+  lastError String?
+  @@index([active, nextCheckAt])
   @@id([guildId, userId])
 }
 

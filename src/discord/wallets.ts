@@ -29,6 +29,11 @@ async function refreshAfterChange(
     await roles.refresh(guildId, userId, true);
     return "NFT roles refreshed.";
   } catch {
+    try {
+      await roles.repo.queue(guildId, userId);
+    } catch {
+      /* The wallet change is already committed. */
+    }
     return "Wallet change saved, but role refresh could not finish. Existing roles may remain. Use /roles refresh after a minute.";
   }
 }
