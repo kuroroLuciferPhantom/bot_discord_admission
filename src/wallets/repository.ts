@@ -115,13 +115,15 @@ export function createWalletRepository(db: PrismaClient): WalletRepository {
       try {
         await db.$transaction(async (tx) => {
           await lockMember(tx, guildId, userId);
+          // Lock contention must not let a request accepted just before expiry commit afterward.
+          const checkedAt = new Date(Math.max(Date.now(), now.getTime()));
           const challenge = await tx.walletChallenge.findFirst({
             where: {
               id,
               guildId,
               userId,
               status: "PENDING",
-              expiresAt: { gt: now },
+              expiresAt: { gt: checkedAt },
             },
           });
           if (!challenge) throw new WalletError("expired");
@@ -147,9 +149,9 @@ export function createWalletRepository(db: PrismaClient): WalletRepository {
               guildId,
               userId,
               address: challenge.address,
-              verifiedAt: now,
+              verifiedAt: checkedAt,
             },
-            update: { userId, active: true, verifiedAt: now },
+            update: { userId, active: true, verifiedAt: checkedAt },
           });
         });
       } catch (error) {

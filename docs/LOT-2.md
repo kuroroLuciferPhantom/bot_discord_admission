@@ -26,7 +26,7 @@ The Lot 1 concurrency failure was reproduced by its PostgreSQL CI test and corre
 
 ## Validation
 
-Local: 49 unit tests pass; generation, typecheck, formatting and build pass. PostgreSQL integration cases run in CI: competing address reservations, double proof consumption, cross-guild/user isolation, removal, hash replay after removal, rollback, expiry, cooldown and wallet limits. No live Discord or paid Alchemy/mainnet transaction was performed.
+Local: 53 unit tests pass; generation, typecheck, formatting and build pass. Mocked RPC transport tests exercise real viem calls without an external provider. PostgreSQL integration cases run in CI: competing address reservations, double proof consumption, cross-guild/user isolation, removal, hash replay after removal, rollback, expiry (including expiry while waiting for a transaction lock), cooldown and wallet limits. No live Discord or paid Alchemy/mainnet transaction was performed.
 
 ## Before live acceptance
 

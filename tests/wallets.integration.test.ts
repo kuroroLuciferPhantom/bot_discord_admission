@@ -139,4 +139,38 @@ describe.skipIf(!url)("wallet PostgreSQL invariants", () => {
       ),
     ).rejects.toThrow("expired");
   });
+  it("rechecks expiry after waiting for a member lock", async () => {
+    if (!db) throw new Error("Missing integration database");
+    const repo = createWalletRepository(db);
+    const staleNow = new Date();
+    const c = await repo.begin({
+      guildId: guilds[0]!,
+      userId: "lock-expiry-user",
+      address: "0x3333333333333333333333333333333333333333",
+      chainId: 1,
+      amountWei: "1300000000001",
+      startBlock: 1n,
+      now: new Date(staleNow.getTime() - 599_500),
+    });
+    let acquired!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    const held = db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${c.guildId + ":" + c.userId}, 0))`;
+      acquired();
+      await new Promise((resolve) => setTimeout(resolve, 750));
+    });
+    await ready;
+    const completion = repo.complete(
+      c.guildId,
+      c.userId,
+      c.id,
+      "0x" + "e".repeat(64),
+      staleNow,
+    );
+    await expect(completion).rejects.toThrow("expired");
+    await held;
+    expect((await repo.list(c.guildId, c.userId)).addresses).toEqual([]);
+  });
 });
