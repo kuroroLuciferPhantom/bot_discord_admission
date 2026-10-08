@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: holder
+      POSTGRES_DB: holder
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U holder -d holder"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  migrate:
+    build: .
+    command: ["npm", "run", "db:migrate"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL using hostname db}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+  bot:
+    build: .
+    restart: unless-stopped
+    init: true
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL using hostname db}
+      DISCORD_TOKEN: ${DISCORD_TOKEN:?Set DISCORD_TOKEN}
+      DISCORD_APPLICATION_ID: ${DISCORD_APPLICATION_ID:?Set DISCORD_APPLICATION_ID}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres_data:
