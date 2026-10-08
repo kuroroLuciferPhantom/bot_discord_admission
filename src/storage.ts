@@ -17,10 +17,9 @@ export type SettingsStore = {
 export function createSettingsStore(db: PrismaClient): SettingsStore {
   return {
     async ensureGuild(guildId) {
-      await db.guildSettings.upsert({
-        where: { guildId },
-        create: { guildId },
-        update: {},
+      await db.guildSettings.createMany({
+        data: [{ guildId }],
+        skipDuplicates: true,
       });
     },
   };

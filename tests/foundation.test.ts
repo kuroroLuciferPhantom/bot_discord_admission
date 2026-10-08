@@ -137,18 +137,18 @@ describe("Discord foundation", () => {
       ),
     ).resolves.toBeUndefined();
   });
-  it("scopes every settings upsert to the supplied guild", async () => {
-    const upsert = vi.fn();
-    const db = { guildSettings: { upsert } };
+  it("scopes every settings insert to the supplied guild", async () => {
+    const createMany = vi.fn();
+    const db = { guildSettings: { createMany } };
     const store = createSettingsStore(
       db as unknown as Parameters<typeof createSettingsStore>[0],
     );
     await store.ensureGuild("111111111111111111");
     await store.ensureGuild("222222222222222222");
-    expect(upsert.mock.calls.map(([arg]) => arg.where.guildId)).toEqual([
+    expect(createMany.mock.calls.map(([arg]) => arg.data[0].guildId)).toEqual([
       "111111111111111111",
       "222222222222222222",
     ]);
-    expect(upsert.mock.calls[0]?.[0].update).toEqual({});
+    expect(createMany.mock.calls[0]?.[0].skipDuplicates).toBe(true);
   });
 });
