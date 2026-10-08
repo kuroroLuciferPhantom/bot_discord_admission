@@ -14,6 +14,35 @@ model GuildSettings {
   checksPerWeek Int @default(1)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  revision Int @default(0)
+}
+
+model RoleRule {
+  id String @id @default(uuid())
+  guildId String
+  group String
+  chainId Int
+  contract String
+  tokenIds String[]
+  minimum String
+  roleId String
+  @@unique([guildId, roleId])
+  @@unique([guildId, group, minimum])
+  @@index([guildId])
+}
+
+model ManagedRole {
+  guildId String
+  roleId String
+  @@id([guildId, roleId])
+}
+
+model RoleMember {
+  guildId String
+  userId String
+  lastCheckedAt DateTime?
+  active Boolean @default(false)
+  @@id([guildId, userId])
 }
 
 enum ChallengeStatus {

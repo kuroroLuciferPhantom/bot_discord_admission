@@ -12,6 +12,12 @@ import { createChainReader } from "./wallets/chain.js";
 import { createWalletRepository } from "./wallets/repository.js";
 import { WalletService } from "./wallets/service.js";
 import { WalletError } from "./wallets/domain.js";
+import { RoleError } from "./roles/domain.js";
+import { roleErrorMessage } from "./discord/roles.js";
+import { RoleService } from "./roles/service.js";
+import { createRoleRepository } from "./roles/repository.js";
+import { createRoleGateway } from "./roles/discord.js";
+import { createHoldingsReader } from "./roles/alchemy.js";
 import {
   walletModal,
   walletButton,
@@ -23,28 +29,50 @@ async function main() {
   const db = createDatabase(config.DATABASE_URL);
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
   const store = createSettingsStore(db);
+  const roles = new RoleService(
+    createRoleRepository(db),
+    createRoleGateway(client),
+    createHoldingsReader(
+      config.ALCHEMY_API_KEY
+        ? {
+            1: `https://eth-mainnet.g.alchemy.com/nft/v3/${config.ALCHEMY_API_KEY}`,
+            137: `https://polygon-mainnet.g.alchemy.com/nft/v3/${config.ALCHEMY_API_KEY}`,
+          }
+        : {},
+    ),
+  );
   const wallets = new WalletService(
     createWalletRepository(db),
     createChainReader({
       ...(config.ETHEREUM_RPC_URL ? { 1: config.ETHEREUM_RPC_URL } : {}),
       ...(config.POLYGON_RPC_URL ? { 137: config.POLYGON_RPC_URL } : {}),
     }),
+    () => new Date(),
+    (guildId, task) => roles.gate.run(guildId, task),
   );
   const handleWalletInteraction = async (
     interaction: ModalSubmitInteraction | ButtonInteraction,
   ) => {
     try {
-      if (interaction.isModalSubmit()) await walletModal(interaction, wallets);
+      if (interaction.isModalSubmit())
+        await walletModal(interaction, wallets, roles);
       else await walletButton(interaction, wallets);
     } catch (error) {
-      if (!(error instanceof WalletError))
+      if (!(error instanceof WalletError) && !(error instanceof RoleError))
         console.error("Wallet interaction failed.");
       try {
         if (interaction.deferred || interaction.replied)
-          await interaction.editReply(walletErrorMessage(error));
+          await interaction.editReply(
+            error instanceof RoleError
+              ? roleErrorMessage(error)
+              : walletErrorMessage(error),
+          );
         else
           await interaction.reply({
-            content: walletErrorMessage(error),
+            content:
+              error instanceof RoleError
+                ? roleErrorMessage(error)
+                : walletErrorMessage(error),
             flags: MessageFlags.Ephemeral,
           });
       } catch {
@@ -84,6 +112,7 @@ async function main() {
         store,
         () => console.error("Command handling failed."),
         wallets,
+        roles,
       );
     else if (
       (interaction.isModalSubmit() || interaction.isButton()) &&
@@ -93,6 +122,7 @@ async function main() {
   });
   try {
     await db.$queryRaw`SELECT 1 FROM "GuildSettings" LIMIT 1`;
+    await db.$queryRaw`SELECT 1 FROM "RoleRule" LIMIT 1`;
     if (!closing) await client.login(config.DISCORD_TOKEN);
   } catch {
     await shutdown();
