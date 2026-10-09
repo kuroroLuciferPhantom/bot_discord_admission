@@ -1,0 +1,17 @@
+generator client {
+  provider = "prisma-client"
+  output = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model GuildSettings {
+  guildId String @id
+  roleStacking Boolean @default(true)
+  checksPerWeek Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
