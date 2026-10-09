@@ -12,7 +12,8 @@ export class RoleService {
   constructor(
     public readonly repo: RoleRepository,
     public readonly gateway: RoleGateway,
-    private readonly reader: HoldingsReader,
+    private readonly reader:
+      HoldingsReader | ((guildId: string) => Promise<HoldingsReader>),
     public readonly gate = new GuildGate(),
   ) {}
   async refresh(guildId: string, userId: string, automatic = false) {
@@ -89,12 +90,18 @@ export class RoleService {
         ...new Map(rules.map((rule) => [sourceKey(rule), rule])).values(),
       ];
       const signal = AbortSignal.timeout(30_000);
+      const reader =
+        sources.length && snapshot.wallets.length
+          ? typeof this.reader === "function"
+            ? await this.reader(guildId)
+            : this.reader
+          : undefined;
       // Query a contract once per wallet, even if several tiers or token-ID filters use it.
       for (const source of sources) {
         const balances = new Map<string, bigint>();
         const standards = new Map<string, string>();
         for (const address of [...new Set(snapshot.wallets)]) {
-          const tokens = await this.reader.read(
+          const tokens = await reader!.read(
             source.chainId as ChainId,
             address,
             source.contract,

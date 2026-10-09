@@ -8,6 +8,12 @@ import { RoleError } from "../roles/domain.js";
 import { roleCommand, roleErrorMessage } from "./roles.js";
 import type { RoleService } from "../roles/service.js";
 import { panelCommand, memberActions } from "./panel.js";
+import {
+  alchemyCommand,
+  alchemyErrorMessage,
+  type AlchemySettings,
+} from "./alchemy.js";
+import { AlchemyError } from "../alchemy/vault.js";
 
 export async function handleCommand(
   interaction: ChatInputCommandInteraction,
@@ -15,6 +21,7 @@ export async function handleCommand(
   reportFailure: () => void,
   wallets?: WalletService,
   roles?: RoleService,
+  alchemy?: AlchemySettings,
 ) {
   try {
     if (!interaction.guildId) {
@@ -30,6 +37,14 @@ export async function handleCommand(
     }
     if (interaction.commandName === "panel") {
       await panelCommand(interaction);
+      return;
+    }
+    if (
+      interaction.commandName === "settings" &&
+      interaction.options.getSubcommand().startsWith("alchemy") &&
+      alchemy
+    ) {
+      await alchemyCommand(interaction, alchemy);
       return;
     }
     if (
@@ -51,12 +66,18 @@ export async function handleCommand(
       allowedMentions: { parse: [] },
     });
   } catch (error) {
-    if (!(error instanceof WalletError) && !(error instanceof RoleError))
+    if (
+      !(error instanceof WalletError) &&
+      !(error instanceof RoleError) &&
+      !(error instanceof AlchemyError)
+    )
       reportFailure();
     const content =
-      error instanceof RoleError
-        ? roleErrorMessage(error)
-        : walletErrorMessage(error);
+      error instanceof AlchemyError
+        ? alchemyErrorMessage(error)
+        : error instanceof RoleError
+          ? roleErrorMessage(error)
+          : walletErrorMessage(error);
     try {
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply(content);

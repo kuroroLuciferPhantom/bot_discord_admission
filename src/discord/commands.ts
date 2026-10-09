@@ -127,6 +127,27 @@ export const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addSubcommand((c) =>
       c
+        .setName("alchemy")
+        .setDescription("Privately configure this server's Alchemy API key."),
+    )
+    .addSubcommand((c) =>
+      c
+        .setName("alchemy-status")
+        .setDescription("Show configuration status without revealing the key."),
+    )
+    .addSubcommand((c) =>
+      c
+        .setName("alchemy-remove")
+        .setDescription("Remove the server key and restore host fallback.")
+        .addBooleanOption((o) =>
+          o
+            .setName("confirm")
+            .setDescription("Confirm removal of this server's saved key.")
+            .setRequired(true),
+        ),
+    )
+    .addSubcommand((c) =>
+      c
         .setName("status")
         .setDescription("Show scheduler status and tracked member counts."),
     )
