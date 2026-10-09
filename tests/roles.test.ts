@@ -85,6 +85,18 @@ function page(nfts: unknown[], pageKey?: string) {
 }
 
 describe("scheduled remove-only checks", () => {
+  it("inspection returns live quantities without role or scheduling effects", async () => {
+    const f = fixture();
+    const result = await f.service.inspect("guild", "user");
+    expect(result.counts.get(low.id)).toBe(20n);
+    expect(result.rules).toEqual([low, high]);
+    expect(f.repo.track).not.toHaveBeenCalled();
+    expect(f.repo.record).not.toHaveBeenCalled();
+    expect(f.gateway.prepare).not.toHaveBeenCalled();
+    expect(f.target.add).not.toHaveBeenCalled();
+    expect(f.target.remove).not.toHaveBeenCalled();
+    await expect(f.service.refresh("guild", "user")).rejects.toThrow("busy");
+  });
   it("puts roleless members to sleep before reading wallets", async () => {
     const f = fixture();
     f.target.current.clear();

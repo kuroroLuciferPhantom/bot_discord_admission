@@ -20,6 +20,7 @@ import { createRoleGateway } from "./roles/discord.js";
 import { createHoldingsReader } from "./roles/alchemy.js";
 import { createJobRepository } from "./jobs/repository.js";
 import { CheckWorker } from "./jobs/worker.js";
+import { panelButton, memberActions } from "./discord/panel.js";
 import {
   walletModal,
   walletButton,
@@ -62,17 +63,24 @@ async function main() {
     try {
       if (interaction.isModalSubmit())
         await walletModal(interaction, wallets, roles);
+      else if (interaction.customId.startsWith("holder:"))
+        await panelButton(interaction, wallets, roles);
       else await walletButton(interaction, wallets);
     } catch (error) {
       if (!(error instanceof WalletError) && !(error instanceof RoleError))
         console.error("Wallet interaction failed.");
       try {
         if (interaction.deferred || interaction.replied)
-          await interaction.editReply(
-            error instanceof RoleError
-              ? roleErrorMessage(error)
-              : walletErrorMessage(error),
-          );
+          await interaction.editReply({
+            content:
+              error instanceof RoleError
+                ? roleErrorMessage(error)
+                : walletErrorMessage(error),
+            ...(interaction.customId.startsWith("holder:")
+              ? { components: [memberActions()] }
+              : {}),
+            allowedMentions: { parse: [] },
+          });
         else
           await interaction.reply({
             content:
@@ -127,7 +135,8 @@ async function main() {
       );
     else if (
       (interaction.isModalSubmit() || interaction.isButton()) &&
-      interaction.customId.startsWith("wallet:")
+      (interaction.customId.startsWith("wallet:") ||
+        (interaction.isButton() && interaction.customId.startsWith("holder:")))
     )
       void handleWalletInteraction(interaction);
   });

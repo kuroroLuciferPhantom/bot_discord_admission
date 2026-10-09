@@ -25,11 +25,17 @@ export class RoleService {
       this.refreshLocked(guildId, userId, true, true),
     );
   }
+  async inspect(guildId: string, userId: string) {
+    return this.gate.run(guildId, () =>
+      this.refreshLocked(guildId, userId, false, false, true),
+    );
+  }
   private async refreshLocked(
     guildId: string,
     userId: string,
     automatic: boolean,
     scheduled = false,
+    readOnly = false,
   ) {
     const key = guildId + ":" + userId,
       now = Date.now();
@@ -58,13 +64,21 @@ export class RoleService {
         } catch (error) {
           if (error instanceof RoleError && error.code === "memberGone") {
             await this.repo.record(guildId, userId, false, true);
-            return { desired: [], counts: new Map<string, bigint>() };
+            return {
+              desired: [],
+              counts: new Map<string, bigint>(),
+              rules: snapshot.rules,
+            };
           }
           throw error;
         }
         if (initialCurrent.size === 0) {
           await this.repo.record(guildId, userId, false, true);
-          return { desired: [], counts: new Map<string, bigint>() };
+          return {
+            desired: [],
+            counts: new Map<string, bigint>(),
+            rules: snapshot.rules,
+          };
         }
       }
       const rules = scheduled
@@ -111,6 +125,8 @@ export class RoleService {
         check.wallets.join(",") !== snapshot.wallets.join(",")
       )
         throw new RoleError("changed");
+      if (readOnly)
+        return { desired: [...desired], counts, rules: snapshot.rules };
       const target = await this.gateway.prepare(
         guildId,
         userId,
@@ -142,7 +158,7 @@ export class RoleService {
       if (scheduled)
         await this.repo.record(guildId, userId, desired.size > 0, true);
       else await this.repo.record(guildId, userId, desired.size > 0);
-      return { desired: [...desired], counts };
+      return { desired: [...desired], counts, rules: snapshot.rules };
     } finally {
       this.inFlight.delete(key);
     }

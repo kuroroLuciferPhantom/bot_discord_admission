@@ -83,6 +83,7 @@ describe("configuration", () => {
 describe("Discord foundation", () => {
   it("registers only implemented guild commands", () => {
     expect(commands.map((command) => command.name)).toEqual([
+      "panel",
       "rules",
       "settings",
       "roles",
@@ -108,7 +109,9 @@ describe("Discord foundation", () => {
     });
     expect(store.ensureGuild).toHaveBeenCalledWith(event.guildId);
     expect(event.editReply).toHaveBeenCalledWith(
-      expect.stringContaining("Administrators configure"),
+      expect.objectContaining({
+        content: expect.stringContaining("Administrators configure"),
+      }),
     );
   });
   it("rejects DMs without touching storage", async () => {
