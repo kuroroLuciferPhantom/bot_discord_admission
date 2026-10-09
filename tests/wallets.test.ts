@@ -71,6 +71,17 @@ function fixture(clock = () => now) {
 }
 
 describe("proof validation", () => {
+  it("resolves the guild-specific RPC reader for challenge and proof", async () => {
+    const f = fixture(),
+      resolve = vi.fn().mockResolvedValue(f.chain);
+    const service = new WalletService(f.repo, resolve, () => now);
+    await service.begin("guild-a", "user-a", address, 1);
+    await service.verify("guild-a", "user-a", challenge.id, hash);
+    expect(resolve).toHaveBeenNthCalledWith(1, "guild-a");
+    expect(resolve).toHaveBeenNthCalledWith(2, "guild-a");
+    expect(f.chain.snapshot).toHaveBeenCalled();
+    expect(f.chain.proof).toHaveBeenCalled();
+  });
   it("accepts exact, fresh, confirmed self-transfers", () =>
     expect(() => validateProof(challenge, hash, proof, now)).not.toThrow());
   it.each([

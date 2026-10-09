@@ -21,6 +21,13 @@ import { createHoldingsReader } from "./roles/alchemy.js";
 import { createJobRepository } from "./jobs/repository.js";
 import { CheckWorker } from "./jobs/worker.js";
 import { panelButton, memberActions } from "./discord/panel.js";
+import { createVault, AlchemyError } from "./alchemy/vault.js";
+import { guildProviders } from "./alchemy/providers.js";
+import {
+  AlchemySettings,
+  alchemyModal,
+  alchemyErrorMessage,
+} from "./discord/alchemy.js";
 import {
   walletModal,
   walletButton,
@@ -32,9 +39,8 @@ async function main() {
   const db = createDatabase(config.DATABASE_URL);
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
   const store = createSettingsStore(db);
-  const roles = new RoleService(
-    createRoleRepository(db),
-    createRoleGateway(client),
+  const providers = guildProviders(
+    createVault(db, config.ALCHEMY_ENCRYPTION_KEY),
     createHoldingsReader(
       config.ALCHEMY_API_KEY
         ? {
@@ -43,13 +49,23 @@ async function main() {
           }
         : {},
     ),
-  );
-  const wallets = new WalletService(
-    createWalletRepository(db),
     createChainReader({
       ...(config.ETHEREUM_RPC_URL ? { 1: config.ETHEREUM_RPC_URL } : {}),
       ...(config.POLYGON_RPC_URL ? { 137: config.POLYGON_RPC_URL } : {}),
     }),
+  );
+  const roles = new RoleService(
+    createRoleRepository(db),
+    createRoleGateway(client),
+    providers.holdings,
+  );
+  const alchemy = new AlchemySettings(
+    createVault(db, config.ALCHEMY_ENCRYPTION_KEY),
+    roles.gate,
+  );
+  const wallets = new WalletService(
+    createWalletRepository(db),
+    providers.chain,
     () => new Date(),
     (guildId, task) => roles.gate.run(guildId, task),
   );
@@ -61,21 +77,32 @@ async function main() {
     interaction: ModalSubmitInteraction | ButtonInteraction,
   ) => {
     try {
-      if (interaction.isModalSubmit())
+      if (
+        interaction.isModalSubmit() &&
+        interaction.customId.startsWith("alchemy:")
+      )
+        await alchemyModal(interaction, alchemy);
+      else if (interaction.isModalSubmit())
         await walletModal(interaction, wallets, roles);
       else if (interaction.customId.startsWith("holder:"))
         await panelButton(interaction, wallets, roles);
       else await walletButton(interaction, wallets);
     } catch (error) {
-      if (!(error instanceof WalletError) && !(error instanceof RoleError))
+      if (
+        !(error instanceof WalletError) &&
+        !(error instanceof RoleError) &&
+        !(error instanceof AlchemyError)
+      )
         console.error("Wallet interaction failed.");
       try {
         if (interaction.deferred || interaction.replied)
           await interaction.editReply({
             content:
-              error instanceof RoleError
-                ? roleErrorMessage(error)
-                : walletErrorMessage(error),
+              error instanceof AlchemyError
+                ? alchemyErrorMessage(error)
+                : error instanceof RoleError
+                  ? roleErrorMessage(error)
+                  : walletErrorMessage(error),
             ...(interaction.customId.startsWith("holder:")
               ? { components: [memberActions()] }
               : {}),
@@ -84,9 +111,11 @@ async function main() {
         else
           await interaction.reply({
             content:
-              error instanceof RoleError
-                ? roleErrorMessage(error)
-                : walletErrorMessage(error),
+              error instanceof AlchemyError
+                ? alchemyErrorMessage(error)
+                : error instanceof RoleError
+                  ? roleErrorMessage(error)
+                  : walletErrorMessage(error),
             flags: MessageFlags.Ephemeral,
           });
       } catch {
@@ -132,10 +161,12 @@ async function main() {
         () => console.error("Command handling failed."),
         wallets,
         roles,
+        alchemy,
       );
     else if (
       (interaction.isModalSubmit() || interaction.isButton()) &&
       (interaction.customId.startsWith("wallet:") ||
+        interaction.customId.startsWith("alchemy:") ||
         (interaction.isButton() && interaction.customId.startsWith("holder:")))
     )
       void handleWalletInteraction(interaction);
@@ -144,6 +175,7 @@ async function main() {
     await db.$queryRaw`SELECT 1 FROM "GuildSettings" LIMIT 1`;
     await db.$queryRaw`SELECT 1 FROM "RoleRule" LIMIT 1`;
     await db.$queryRaw`SELECT "nextCheckAt" FROM "RoleMember" LIMIT 1`;
+    await db.$queryRaw`SELECT 1 FROM "GuildAlchemyConfig" LIMIT 1`;
     if (!closing) await client.login(config.DISCORD_TOKEN);
   } catch {
     await shutdown();

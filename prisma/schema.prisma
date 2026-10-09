@@ -17,6 +17,12 @@ model GuildSettings {
   revision Int @default(0)
 }
 
+model GuildAlchemyConfig {
+  guildId String @id
+  ciphertext String
+  updatedAt DateTime @updatedAt
+}
+
 model RoleRule {
   id String @id @default(uuid())
   guildId String

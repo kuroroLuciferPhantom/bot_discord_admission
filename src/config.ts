@@ -34,6 +34,18 @@ const schema = z.object({
     (value) => (value === undefined || value === "" ? undefined : value),
     z.enum(["true", "false"]).optional(),
   ),
+  ALCHEMY_ENCRYPTION_KEY: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z
+      .string()
+      .refine(
+        (value) =>
+          /^[A-Za-z0-9+/]{43}=$/.test(value) &&
+          Buffer.from(value, "base64").length === 32 &&
+          Buffer.from(value, "base64").toString("base64") === value,
+      )
+      .optional(),
+  ),
 });
 
 export function readConfig(env: NodeJS.ProcessEnv) {

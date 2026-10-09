@@ -2,7 +2,7 @@
 
 Multi-server NFT role bot. English commands, no wallet connection, no signing request, no spending approvals.
 
-## Current status — Lots 1–5
+## Current status — Lots 1–6
 
 Implemented: private wallet verification, ERC-1155/ERC-721 counts through Alchemy, admin rules/settings, manual role refresh, automatic refresh on verified wallet changes, durable scheduled checks and retries, dormant members, server-scoped storage, migrations, Docker Compose and CI.
 
@@ -48,6 +48,16 @@ Invite the application with `bot` and `applications.commands` scopes. No privile
 ## NFT roles and administration
 
 Configure `ALCHEMY_API_KEY` with Ethereum and Polygon NFT API access. Register commands again after upgrading and apply all migrations before starting the bot.
+
+### Private per-server Alchemy configuration
+
+The host owner can enable encrypted server keys by setting `ALCHEMY_ENCRYPTION_KEY` to 32 random bytes encoded in canonical Base64. Generate it locally with `node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))"`, copy directly into the host's `.env`, and never share or commit its output. Recreate the bot container after changing host environment variables. Apply the Lot 6 migration and redeploy commands before using this feature.
+
+Server administrators run `/settings alchemy` to open a **blank private modal**, not pass a key as a slash-command argument. Submission rechecks Administrator and tests Ethereum/Polygon mainnet RPC plus NFT access before replacing any configuration. Replies never show the key. `/settings alchemy-status` shows configuration presence only; it does not decrypt the saved key. `/settings alchemy-remove confirm:true` deletes this server's override and restores host fallback. Deletion does not revoke the key at Alchemy.
+
+Keys are stored as randomized AES-256-GCM ciphertext authenticated to their guild ID. The master secret exists only on the host. Save it securely **separately from database backups**: losing/changing it makes saved keys unreadable. No master-key rotation workflow is provided yet; do not replace it casually. Authorized admins can recover a server by replacing its key or explicitly removing its override. Plaintext keys necessarily pass through Discord and process memory: private is not end-to-end encrypted, and Discord may retain interaction data. Never enter recovery phrases or wallet private keys. Alchemy application restrictions must permit the bot host; restrict access and budget quotas in Alchemy.
+
+A saved server key takes precedence for both NFT reads and wallet-proof RPC on both networks, without a restart. Only servers with **no saved override** use `ALCHEMY_API_KEY` (NFT) and `ETHEREUM_RPC_URL` / `POLYGON_RPC_URL` (proofs) from the host. A locked/invalid/unavailable override never silently falls back to the host key. API failures preserve roles and queue retries as before. Host fallback is a shared quota/cost decision; leave those variables unset if clients must always provide their own keys. Key validation attempts share the guild gate and are limited to once per minute per server (in memory, resets on restart). Validation makes up to four read-only calls; it proves current access, not future quota availability. No host secret is modifiable from Discord.
 
 ```text
 /rules add group:apes network:polygon contract:0x… minimum:5 role:@Holder

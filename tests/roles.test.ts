@@ -85,6 +85,16 @@ function page(nfts: unknown[], pageKey?: string) {
 }
 
 describe("scheduled remove-only checks", () => {
+  it("resolves holdings once per guild and skips it for dormant users", async () => {
+    const f = fixture(),
+      resolve = vi.fn().mockResolvedValue(f.reader);
+    const service = new RoleService(f.repo, f.gateway, resolve);
+    await service.refresh("guild", "user");
+    expect(resolve).toHaveBeenCalledExactlyOnceWith("guild");
+    f.target.current.clear();
+    await service.check("guild", "user");
+    expect(resolve).toHaveBeenCalledTimes(1);
+  });
   it("inspection returns live quantities without role or scheduling effects", async () => {
     const f = fixture();
     const result = await f.service.inspect("guild", "user");
