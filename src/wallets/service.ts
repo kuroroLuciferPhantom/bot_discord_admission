@@ -19,6 +19,10 @@ export class WalletService {
     private readonly repo: WalletRepository,
     private readonly chain: ChainReader,
     private readonly clock = () => new Date(),
+    private readonly mutation: <T>(
+      guildId: string,
+      task: () => Promise<T>,
+    ) => Promise<T> = (_guildId, task) => task(),
   ) {}
 
   private async bounded<T>(userId: string, task: () => Promise<T>): Promise<T> {
@@ -74,7 +78,9 @@ export class WalletService {
       if (this.clock() >= challenge.expiresAt) throw new WalletError("expired");
       const proof = await this.chain.proof(challenge.chainId as ChainId, hash);
       validateProof(challenge, hash, proof, this.clock());
-      await this.repo.complete(guildId, userId, id, hash, this.clock());
+      await this.mutation(guildId, () =>
+        this.repo.complete(guildId, userId, id, hash, this.clock()),
+      );
       return challenge.address;
     });
   }
@@ -84,7 +90,7 @@ export class WalletService {
   async remove(guildId: string, userId: string, addressInput: string) {
     const address = normalizeAddress(addressInput);
     return this.bounded(userId, () =>
-      this.repo.remove(guildId, userId, address),
+      this.mutation(guildId, () => this.repo.remove(guildId, userId, address)),
     );
   }
 }

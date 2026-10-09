@@ -5,8 +5,9 @@ export const messages = {
     unavailable: "This command is not available yet.",
     error: "Something went wrong. Please try again later.",
     help: [
-      "**Holder Bot — wallet verification preview**",
-      "Use /wallet add, /wallet list, /wallet remove and /wallet verify. Responses are private. NFT role rules are not available yet.",
+      "**Holder Bot**",
+      "Use /wallet add, /wallet list, /wallet remove, /wallet verify and /roles refresh. Responses are private. Administrators configure /rules and /settings.",
+      "NFT roles use ERC-1155 copy quantities or ERC-721 counts across your verified wallets. Scheduled checks will arrive in the next version.",
       "Wallet verification uses a native self-transfer and requires network fees. Only standard externally owned wallets are supported in this version.",
       "Verification will use a self-transfer on Ethereum or Polygon. No wallet connection or spending approval is requested.",
       "Never share your recovery phrase or private key.",

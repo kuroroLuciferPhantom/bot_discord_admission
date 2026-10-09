@@ -23,6 +23,13 @@ const schema = z.object({
     (value) => (value === "" ? undefined : value),
     z.string().url().startsWith("https://").optional(),
   ),
+  ALCHEMY_API_KEY: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z
+      .string()
+      .regex(/^[a-zA-Z0-9_-]{1,200}$/)
+      .optional(),
+  ),
 });
 
 export function readConfig(env: NodeJS.ProcessEnv) {

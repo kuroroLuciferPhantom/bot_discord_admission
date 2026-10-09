@@ -18,6 +18,20 @@ import {
   type ChainId,
 } from "../wallets/domain.js";
 import type { WalletService } from "../wallets/service.js";
+import type { RoleService } from "../roles/service.js";
+async function refreshAfterChange(
+  roles: RoleService | undefined,
+  guildId: string,
+  userId: string,
+) {
+  if (!roles) return "Role refresh is not configured.";
+  try {
+    await roles.refresh(guildId, userId, true);
+    return "NFT roles refreshed.";
+  } catch {
+    return "Wallet change saved, but role refresh could not finish. Existing roles may remain. Use /roles refresh after a minute.";
+  }
+}
 
 const errors: Record<WalletError["code"], string> = {
   invalidAddress:
@@ -93,6 +107,7 @@ function addModal(chainId: ChainId) {
 export async function walletCommand(
   interaction: ChatInputCommandInteraction,
   service: WalletService,
+  roles?: RoleService,
 ) {
   const guildId = interaction.guildId!;
   const userId = interaction.user.id;
@@ -126,7 +141,8 @@ export async function walletCommand(
     );
     await interaction.editReply(
       removed
-        ? "Wallet removed. Any pending challenge for this address was cancelled."
+        ? "Wallet removed. " +
+            (await refreshAfterChange(roles, guildId, userId))
         : "No verified wallet was removed. Any matching pending challenge was cancelled.",
     );
   } else if (sub === "verify") {
@@ -137,7 +153,8 @@ export async function walletCommand(
       interaction.options.getString("transaction", true),
     );
     await interaction.editReply(
-      `Wallet verified: \`${address}\`. NFT role assignment is coming in the next version.`,
+      `Wallet verified: \`${address}\`. ` +
+        (await refreshAfterChange(roles, guildId, userId)),
     );
   } else throw new WalletError("notFound");
 }
@@ -145,6 +162,7 @@ export async function walletCommand(
 export async function walletModal(
   interaction: ModalSubmitInteraction,
   service: WalletService,
+  roles?: RoleService,
 ) {
   if (!interaction.guildId) throw new WalletError("notFound");
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -165,7 +183,12 @@ export async function walletModal(
       interaction.fields.getTextInputValue("transaction"),
     );
     await interaction.editReply(
-      `Wallet verified: \`${address}\`. NFT role assignment is coming in the next version.`,
+      `Wallet verified: \`${address}\`. ` +
+        (await refreshAfterChange(
+          roles,
+          interaction.guildId,
+          interaction.user.id,
+        )),
     );
   } else throw new WalletError("notFound");
 }

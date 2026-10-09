@@ -32,6 +32,7 @@ services:
       DISCORD_APPLICATION_ID: ${DISCORD_APPLICATION_ID:?Set DISCORD_APPLICATION_ID}
       ETHEREUM_RPC_URL: ${ETHEREUM_RPC_URL:-}
       POLYGON_RPC_URL: ${POLYGON_RPC_URL:-}
+      ALCHEMY_API_KEY: ${ALCHEMY_API_KEY:-}
     depends_on:
       migrate:
         condition: service_completed_successfully

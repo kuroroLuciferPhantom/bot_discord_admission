@@ -4,12 +4,16 @@ import { messages } from "./messages.js";
 import type { WalletService } from "../wallets/service.js";
 import { walletCommand, walletErrorMessage } from "./wallets.js";
 import { WalletError } from "../wallets/domain.js";
+import { RoleError } from "../roles/domain.js";
+import { roleCommand, roleErrorMessage } from "./roles.js";
+import type { RoleService } from "../roles/service.js";
 
 export async function handleCommand(
   interaction: ChatInputCommandInteraction,
   store: SettingsStore,
   reportFailure: () => void,
   wallets?: WalletService,
+  roles?: RoleService,
 ) {
   try {
     if (!interaction.guildId) {
@@ -20,7 +24,14 @@ export async function handleCommand(
       return;
     }
     if (interaction.commandName === "wallet" && wallets) {
-      await walletCommand(interaction, wallets);
+      await walletCommand(interaction, wallets, roles);
+      return;
+    }
+    if (
+      ["rules", "roles", "settings"].includes(interaction.commandName) &&
+      roles
+    ) {
+      await roleCommand(interaction, roles);
       return;
     }
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -31,8 +42,12 @@ export async function handleCommand(
     await store.ensureGuild(interaction.guildId);
     await interaction.editReply(messages.en.help);
   } catch (error) {
-    if (!(error instanceof WalletError)) reportFailure();
-    const content = walletErrorMessage(error);
+    if (!(error instanceof WalletError) && !(error instanceof RoleError))
+      reportFailure();
+    const content =
+      error instanceof RoleError
+        ? roleErrorMessage(error)
+        : walletErrorMessage(error);
     try {
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply(content);
