@@ -15,6 +15,14 @@ const schema = z.object({
   DISCORD_TOKEN: z.string().trim().min(1),
   DISCORD_APPLICATION_ID: snowflake,
   DATABASE_URL: databaseUrl,
+  ETHEREUM_RPC_URL: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().url().startsWith("https://").optional(),
+  ),
+  POLYGON_RPC_URL: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().url().startsWith("https://").optional(),
+  ),
 });
 
 export function readConfig(env: NodeJS.ProcessEnv) {

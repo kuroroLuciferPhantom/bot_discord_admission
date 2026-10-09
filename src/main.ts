@@ -3,12 +3,55 @@ import { Client, Events, GatewayIntentBits } from "discord.js";
 import { readConfig } from "./config.js";
 import { createDatabase, createSettingsStore } from "./storage.js";
 import { handleCommand } from "./discord/handler.js";
+import {
+  MessageFlags,
+  type ModalSubmitInteraction,
+  type ButtonInteraction,
+} from "discord.js";
+import { createChainReader } from "./wallets/chain.js";
+import { createWalletRepository } from "./wallets/repository.js";
+import { WalletService } from "./wallets/service.js";
+import { WalletError } from "./wallets/domain.js";
+import {
+  walletModal,
+  walletButton,
+  walletErrorMessage,
+} from "./discord/wallets.js";
 
 async function main() {
   const config = readConfig(process.env);
   const db = createDatabase(config.DATABASE_URL);
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
   const store = createSettingsStore(db);
+  const wallets = new WalletService(
+    createWalletRepository(db),
+    createChainReader({
+      ...(config.ETHEREUM_RPC_URL ? { 1: config.ETHEREUM_RPC_URL } : {}),
+      ...(config.POLYGON_RPC_URL ? { 137: config.POLYGON_RPC_URL } : {}),
+    }),
+  );
+  const handleWalletInteraction = async (
+    interaction: ModalSubmitInteraction | ButtonInteraction,
+  ) => {
+    try {
+      if (interaction.isModalSubmit()) await walletModal(interaction, wallets);
+      else await walletButton(interaction, wallets);
+    } catch (error) {
+      if (!(error instanceof WalletError))
+        console.error("Wallet interaction failed.");
+      try {
+        if (interaction.deferred || interaction.replied)
+          await interaction.editReply(walletErrorMessage(error));
+        else
+          await interaction.reply({
+            content: walletErrorMessage(error),
+            flags: MessageFlags.Ephemeral,
+          });
+      } catch {
+        console.error("Wallet response failed.");
+      }
+    }
+  };
   let closing = false;
   const shutdown = async () => {
     if (closing) return;
@@ -34,10 +77,19 @@ async function main() {
   client.once(Events.ClientReady, () => console.info("Holder Bot connected."));
   client.on(Events.Error, () => console.error("Discord client error."));
   client.on(Events.InteractionCreate, (interaction) => {
-    if (closing || !interaction.isChatInputCommand()) return;
-    void handleCommand(interaction, store, () =>
-      console.error("Command handling failed."),
-    );
+    if (closing) return;
+    if (interaction.isChatInputCommand())
+      void handleCommand(
+        interaction,
+        store,
+        () => console.error("Command handling failed."),
+        wallets,
+      );
+    else if (
+      (interaction.isModalSubmit() || interaction.isButton()) &&
+      interaction.customId.startsWith("wallet:")
+    )
+      void handleWalletInteraction(interaction);
   });
   try {
     await db.$queryRaw`SELECT 1 FROM "GuildSettings" LIMIT 1`;
