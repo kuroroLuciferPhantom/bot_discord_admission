@@ -6,6 +6,7 @@ import type { ChainId } from "../wallets/domain.js";
 import { GuildGate } from "./gate.js";
 
 export class RoleService {
+  public schedulerEnabled = false;
   private readonly inFlight = new Set<string>();
   private readonly cooldown = new Map<string, number>();
   constructor(
@@ -19,10 +20,16 @@ export class RoleService {
       this.refreshLocked(guildId, userId, automatic),
     );
   }
+  async check(guildId: string, userId: string) {
+    return this.gate.run(guildId, () =>
+      this.refreshLocked(guildId, userId, true, true),
+    );
+  }
   private async refreshLocked(
     guildId: string,
     userId: string,
     automatic: boolean,
+    scheduled = false,
   ) {
     const key = guildId + ":" + userId,
       now = Date.now();
@@ -32,16 +39,40 @@ export class RoleService {
       throw new RoleError("busy");
     for (const [key, until] of this.cooldown)
       if (until <= now) this.cooldown.delete(key);
-    if (this.cooldown.size >= 10_000) throw new RoleError("busy");
-    this.cooldown.set(key, now + 60_000);
+    if (!scheduled && this.cooldown.size >= 10_000) throw new RoleError("busy");
+    if (!scheduled) this.cooldown.set(key, now + 60_000);
     this.inFlight.add(key);
     try {
       const snapshot = await this.repo.snapshot(guildId, userId);
+      let initialCurrent: Set<string> | undefined;
+      if (scheduled) {
+        try {
+          initialCurrent = (
+            await this.gateway.prepare(
+              guildId,
+              userId,
+              snapshot.managed,
+              new Set(),
+            )
+          ).current;
+        } catch (error) {
+          if (error instanceof RoleError && error.code === "memberGone") {
+            await this.repo.record(guildId, userId, false, true);
+            return { desired: [], counts: new Map<string, bigint>() };
+          }
+          throw error;
+        }
+        if (initialCurrent.size === 0) {
+          await this.repo.record(guildId, userId, false, true);
+          return { desired: [], counts: new Map<string, bigint>() };
+        }
+      }
+      const rules = scheduled
+        ? snapshot.rules.filter((rule) => initialCurrent!.has(rule.roleId))
+        : snapshot.rules;
       const holdings: Inventory = new Map();
       const sources = [
-        ...new Map(
-          snapshot.rules.map((rule) => [sourceKey(rule), rule]),
-        ).values(),
+        ...new Map(rules.map((rule) => [sourceKey(rule), rule])).values(),
       ];
       const signal = AbortSignal.timeout(30_000);
       // Query a contract once per wallet, even if several tiers or token-ID filters use it.
@@ -70,7 +101,7 @@ export class RoleService {
         holdings.set(sourceKey(source), balances);
       }
       const { desired, counts } = evaluate(
-        snapshot.rules,
+        rules,
         holdings,
         snapshot.settings.roleStacking,
       );
@@ -86,22 +117,31 @@ export class RoleService {
         snapshot.managed,
         desired,
       );
+      if (
+        initialCurrent &&
+        (initialCurrent.size !== target.current.size ||
+          [...initialCurrent].some((id) => !target.current.has(id)))
+      )
+        throw new RoleError("changed");
       // Keep members discoverable for retries if Discord fails after a partial update.
-      await this.repo.record(
+      await this.repo.track(
         guildId,
         userId,
         desired.size > 0 || target.current.size > 0,
       );
       // Add first so an unsuccessful promotion cannot strip the lower tier.
       try {
-        for (const id of desired)
-          if (!target.current.has(id)) await target.add(id);
+        if (!scheduled)
+          for (const id of desired)
+            if (!target.current.has(id)) await target.add(id);
         for (const id of target.current)
           if (!desired.has(id)) await target.remove(id);
       } catch {
         throw new RoleError("partial");
       }
-      await this.repo.record(guildId, userId, desired.size > 0);
+      if (scheduled)
+        await this.repo.record(guildId, userId, desired.size > 0, true);
+      else await this.repo.record(guildId, userId, desired.size > 0);
       return { desired: [...desired], counts };
     } finally {
       this.inFlight.delete(key);

@@ -14,6 +14,7 @@ import { roleCommand } from "../src/discord/roles.js";
 import { roleAllowed } from "../src/roles/discord.js";
 import {
   PermissionFlagsBits,
+  MessageFlags,
   type Role,
   type Guild,
   type ChatInputCommandInteraction,
@@ -47,6 +48,7 @@ function fixture(wallets = ["wallet-a", "wallet-b"]) {
   const repo = {
     snapshot: vi.fn().mockResolvedValue(snapshot),
     record: vi.fn(),
+    track: vi.fn(),
     save: vi.fn(),
     remove: vi.fn(),
     settings: vi.fn(),
@@ -81,11 +83,122 @@ function page(nfts: unknown[], pageKey?: string) {
     JSON.stringify({ ownedNfts: nfts, ...(pageKey ? { pageKey } : {}) }),
   );
 }
+
+describe("scheduled remove-only checks", () => {
+  it("puts roleless members to sleep before reading wallets", async () => {
+    const f = fixture();
+    f.target.current.clear();
+    await f.service.check("guild", "user");
+    expect(f.reader.read).not.toHaveBeenCalled();
+    expect(f.repo.record).toHaveBeenCalledWith("guild", "user", false, true);
+  });
+  it("puts confirmed departed members to sleep without an API call", async () => {
+    const f = fixture();
+    f.gateway.prepare.mockRejectedValue(new RoleError("memberGone"));
+    await f.service.check("guild", "user");
+    expect(f.reader.read).not.toHaveBeenCalled();
+    expect(f.repo.record).toHaveBeenCalledWith("guild", "user", false, true);
+  });
+  it("keeps an eligible held tier without granting a missing higher tier", async () => {
+    const f = fixture();
+    f.snapshot.settings.roleStacking = false;
+    f.target.current = new Set([low.roleId]);
+    const result = await f.service.check("guild", "user");
+    expect(result.desired).toEqual([low.roleId]);
+    expect(f.target.add).not.toHaveBeenCalled();
+    expect(f.target.remove).not.toHaveBeenCalled();
+    expect(f.repo.record).toHaveBeenCalledWith("guild", "user", true, true);
+  });
+  it("removes an ineligible tier without downgrading to an unheld role", async () => {
+    const f = fixture();
+    f.target.current = new Set([high.roleId]);
+    f.reader.read.mockResolvedValue(new Map());
+    await f.service.check("guild", "user");
+    expect(f.target.remove).toHaveBeenCalledWith(high.roleId);
+    expect(f.target.add).not.toHaveBeenCalled();
+    expect(f.repo.record).toHaveBeenCalledWith("guild", "user", false, true);
+  });
+  it("cleans obsolete managed roles without querying obsolete contracts", async () => {
+    const f = fixture();
+    await f.service.check("guild", "user");
+    expect(f.reader.read).not.toHaveBeenCalled();
+    expect(f.target.remove).toHaveBeenCalledWith("old-role");
+  });
+  it("preserves roles on provider errors", async () => {
+    const f = fixture();
+    f.target.current = new Set([low.roleId]);
+    f.reader.read.mockRejectedValue(new RoleError("provider"));
+    await expect(f.service.check("guild", "user")).rejects.toThrow("provider");
+    expect(f.target.remove).not.toHaveBeenCalled();
+    expect(f.repo.record).not.toHaveBeenCalled();
+  });
+  it("retries if Discord roles change during the ownership read", async () => {
+    const f = fixture();
+    f.target.current = new Set([low.roleId]);
+    f.gateway.prepare.mockResolvedValueOnce({
+      ...f.target,
+      current: new Set([high.roleId]),
+    });
+    await expect(f.service.check("guild", "user")).rejects.toThrow("changed");
+    expect(f.target.remove).not.toHaveBeenCalled();
+  });
+  it("reports partial removal for retry instead of marking it successful", async () => {
+    const f = fixture();
+    f.target.remove.mockRejectedValue(new Error("Discord down"));
+    await expect(f.service.check("guild", "user")).rejects.toThrow("partial");
+    expect(f.repo.track).toHaveBeenCalledWith("guild", "user", true);
+    expect(f.repo.record).not.toHaveBeenCalled();
+  });
+});
 const nft = (id = "1", balance = "8", tokenType = "ERC1155") => ({
   contract: { address: contract },
   tokenId: id,
   balance,
   tokenType,
+});
+
+describe("scheduler admin status", () => {
+  it("refuses non-admins before reading status", async () => {
+    const f = fixture();
+    const event = {
+      guildId: "guild",
+      user: { id: "user" },
+      commandName: "settings",
+      memberPermissions: { has: () => false },
+    } as unknown as ChatInputCommandInteraction;
+    await expect(roleCommand(event, f.service)).rejects.toThrow("adminOnly");
+  });
+  it("reports only the invoking guild and replies privately", async () => {
+    const f = fixture();
+    f.repo.status = vi.fn().mockResolvedValue({
+      active: 2,
+      dormant: 3,
+      due: 1,
+      retrying: 1,
+      lastSuccess: null,
+    });
+    f.service.schedulerEnabled = true;
+    const event = {
+      guildId: "guild",
+      user: { id: "user" },
+      commandName: "settings",
+      memberPermissions: { has: () => true },
+      options: { getSubcommand: () => "status" },
+      deferReply: vi.fn(),
+      editReply: vi.fn(),
+    };
+    await roleCommand(
+      event as unknown as ChatInputCommandInteraction,
+      f.service,
+    );
+    expect(f.repo.status).toHaveBeenCalledWith("guild");
+    expect(event.deferReply).toHaveBeenCalledWith({
+      flags: MessageFlags.Ephemeral,
+    });
+    expect(event.editReply).toHaveBeenCalledWith(
+      expect.stringContaining("Scheduler: enabled"),
+    );
+  });
 });
 
 describe("integer NFT rules", () => {

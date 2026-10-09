@@ -1,5 +1,6 @@
 import {
   PermissionFlagsBits,
+  DiscordAPIError,
   type Client,
   type Guild,
   type Role,
@@ -56,17 +57,27 @@ export function createRoleGateway(client: Client): RoleGateway {
       const guild = await client.guilds.fetch(guildId);
       await guild.members.fetchMe({ force: true });
       const roles = await guild.roles.fetch();
-      const member = await guild.members.fetch({ user: userId, force: true });
-      if (!guild.members.me?.permissions.has(PermissionFlagsBits.ManageRoles))
+      const member = await guild.members
+        .fetch({ user: userId, force: true })
+        .catch((error) => {
+          if (error instanceof DiscordAPIError && error.code === 10007)
+            throw new RoleError("memberGone");
+          throw error;
+        });
+      const current = new Set(
+        [...member.roles.cache.keys()].filter((id) => managed.includes(id)),
+      );
+      if (
+        (current.size > 0 || desired.size > 0) &&
+        !guild.members.me?.permissions.has(PermissionFlagsBits.ManageRoles)
+      )
         throw new RoleError("permissions");
       for (const id of managed) {
+        if (!current.has(id) && !desired.has(id)) continue;
         const role = roles.get(id);
         if ((!role && desired.has(id)) || (role && !roleAllowed(role, guild)))
           throw new RoleError("permissions");
       }
-      const current = new Set(
-        [...member.roles.cache.keys()].filter((id) => managed.includes(id)),
-      );
       return {
         current,
         async add(id) {

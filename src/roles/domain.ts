@@ -11,7 +11,9 @@ export class RoleError extends Error {
       | "busy"
       | "changed"
       | "partial"
-      | "limit",
+      | "limit"
+      | "memberGone",
+    // A confirmed Unknown Member response is different from permissions/network failures.
   ) {
     super(code);
   }

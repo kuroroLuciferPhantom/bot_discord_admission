@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "../generated/prisma/client.js";
 import { RoleError, groupSource, type RuleInput } from "./domain.js";
+import { nextRegularCheck } from "../jobs/policy.js";
 
 export function createRoleRepository(db: PrismaClient) {
   const initialize = async (guildId: string) => {
@@ -89,16 +90,86 @@ export function createRoleRepository(db: PrismaClient) {
       update: { roleStacking?: boolean; checksPerWeek?: number },
     ) {
       await initialize(guildId);
-      return db.guildSettings.update({
-        where: { guildId },
-        data: { ...update, revision: { increment: 1 } },
+      return db.$transaction(async (tx) => {
+        const settings = await tx.guildSettings.update({
+          where: { guildId },
+          data: { ...update, revision: { increment: 1 } },
+        });
+        if (update.checksPerWeek !== undefined) {
+          await tx.$executeRaw`UPDATE "RoleMember" SET "nextCheckAt" = COALESCE("lastCheckedAt", CURRENT_TIMESTAMP) + (${settings.checksPerWeek === 2 ? 302400000 : 604800000} * INTERVAL '1 millisecond') WHERE "guildId" = ${guildId} AND "active" AND "leaseId" IS NULL AND "lastError" IS NULL AND "nextCheckAt" > CURRENT_TIMESTAMP`;
+        }
+        return settings;
       });
     },
-    async record(guildId: string, userId: string, active: boolean) {
+    async track(guildId: string, userId: string, active: boolean) {
+      await db.roleMember.createMany({
+        data: [{ guildId, userId, active }],
+        skipDuplicates: true,
+      });
+      await db.roleMember.update({
+        where: { guildId_userId: { guildId, userId } },
+        data: { active, nextCheckAt: active ? new Date() : null },
+      });
+    },
+    async queue(guildId: string, userId: string) {
+      await db.roleMember.updateMany({
+        where: { guildId, userId, active: true },
+        data: {
+          nextCheckAt: new Date(),
+          leaseId: null,
+          leaseUntil: null,
+          attempts: 0,
+          lastError: null,
+        },
+      });
+    },
+    async status(guildId: string) {
+      const [active, dormant, due, retrying, checked] = await Promise.all([
+        db.roleMember.count({ where: { guildId, active: true } }),
+        db.roleMember.count({ where: { guildId, active: false } }),
+        db.roleMember.count({
+          where: { guildId, active: true, nextCheckAt: { lte: new Date() } },
+        }),
+        db.roleMember.count({
+          where: { guildId, active: true, lastError: { not: null } },
+        }),
+        db.roleMember.aggregate({
+          where: { guildId },
+          _max: { lastCheckedAt: true },
+        }),
+      ]);
+      return {
+        active,
+        dormant,
+        due,
+        retrying,
+        lastSuccess: checked._max.lastCheckedAt,
+      };
+    },
+    async record(
+      guildId: string,
+      userId: string,
+      active: boolean,
+      scheduled = false,
+    ) {
+      const settings = await db.guildSettings.findUnique({
+        where: { guildId },
+      });
+      const now = new Date();
+      const data = {
+        active,
+        lastCheckedAt: now,
+        nextCheckAt: active
+          ? nextRegularCheck(now, settings?.checksPerWeek ?? 1)
+          : null,
+        ...(!scheduled
+          ? { leaseId: null, leaseUntil: null, attempts: 0, lastError: null }
+          : {}),
+      };
       await db.roleMember.upsert({
         where: { guildId_userId: { guildId, userId } },
-        create: { guildId, userId, active, lastCheckedAt: new Date() },
-        update: { active, lastCheckedAt: new Date() },
+        create: { guildId, userId, ...data },
+        update: data,
       });
     },
   };

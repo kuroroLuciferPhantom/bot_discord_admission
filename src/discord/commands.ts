@@ -116,6 +116,11 @@ export const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addSubcommand((c) =>
       c
+        .setName("status")
+        .setDescription("Show scheduler status and tracked member counts."),
+    )
+    .addSubcommand((c) =>
+      c
         .setName("role-stacking")
         .setDescription(
           "Keep all eligible tiers or only the highest tier per group.",
@@ -131,14 +136,12 @@ export const commands = [
       c
         .setName("check-frequency")
         .setDescription(
-          "Save the frequency for the upcoming scheduled checker.",
+          "Set the scheduled check frequency for active role holders.",
         )
         .addIntegerOption((o) =>
           o
             .setName("times-per-week")
-            .setDescription(
-              "Weekly frequency; scheduled checks are not enabled yet.",
-            )
+            .setDescription("Weekly check frequency.")
             .setRequired(true)
             .addChoices(
               { name: "Once", value: 1 },

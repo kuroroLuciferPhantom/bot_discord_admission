@@ -23,6 +23,7 @@ export function roleErrorMessage(error: RoleError) {
     partial:
       "Discord could not complete all role changes. Some changes may have succeeded. Fix bot permissions and refresh again.",
     limit: "This server is limited to twenty role rules in this version.",
+    memberGone: "This member is no longer on the server.",
   };
   return messages[error.code];
 }
@@ -50,6 +51,13 @@ export async function roleCommand(
     return;
   }
   if (interaction.commandName === "settings") {
+    if (sub === "status") {
+      const status = await service.repo.status(guildId);
+      await interaction.editReply(
+        `Scheduler: ${service.schedulerEnabled ? "enabled" : "disabled"}\nActive members: ${status.active}\nDormant members: ${status.dormant}\nDue checks: ${status.due}\nRetrying: ${status.retrying}\nLatest successful check: ${status.lastSuccess ? "<t:" + Math.floor(status.lastSuccess.getTime() / 1000) + ":R>" : "none"}`,
+      );
+      return;
+    }
     await service.gate.run(guildId, async () => {
       if (sub === "role-stacking")
         await service.repo.settings(guildId, {
@@ -63,7 +71,7 @@ export async function roleCommand(
     });
     await interaction.editReply(
       sub === "check-frequency"
-        ? "Frequency saved. Scheduled checks will be enabled in the next version."
+        ? "Frequency saved. Active role holders will be checked at the configured interval when the scheduler is enabled."
         : "Role stacking saved. Changes apply on the next role refresh.",
     );
     return;
