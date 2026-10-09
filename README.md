@@ -2,7 +2,7 @@
 
 Multi-server NFT role bot. English commands, no wallet connection, no signing request, no spending approvals.
 
-## Current status — Lots 1–4
+## Current status — Lots 1–5
 
 Implemented: private wallet verification, ERC-1155/ERC-721 counts through Alchemy, admin rules/settings, manual role refresh, automatic refresh on verified wallet changes, durable scheduled checks and retries, dormant members, server-scoped storage, migrations, Docker Compose and CI.
 
@@ -20,6 +20,14 @@ Node.js 24.19+, npm, PostgreSQL 17, a Discord application and a dedicated test s
 6. Start with `npm run dev`. Try `/help` in the test server.
 
 ## Wallet verification
+
+### Button-first member experience
+
+An administrator runs `/panel publish` in the member channel once. The bot posts a public English membership card with **Verify wallet**, **My wallets**, **Refresh roles** and **My status** buttons. The panel contains no private data; every member action replies privately and uses the clicking member's account and server. Buttons survive process restarts without collectors. `/help` also offers the same buttons in a private reply. Redeploy commands after upgrading; no new database migration is needed for this panel.
+
+**Verify wallet** opens a private network choice, then an address form. Proof instructions include a **Submit transaction** button and hash form. **My wallets** lists addresses with numbered removal buttons and restores any pending challenge. Removal requires confirmation and refreshes eligibility. **Refresh roles** claims eligible roles. **My status** shows live quantities and configured tiers without changing roles or reactivating dormant members. Status and refresh share the existing one-minute API cooldown. Wallet list and mutations retain the existing verifier limits.
+
+Only panel publication is public, and it requires Administrator at registration and runtime. Slash commands remain available as a fallback. The bot does not track panel message IDs or automatically update old cards; to replace a panel, delete the old message in Discord and publish again. Discord embeds and standard components are used, not a separate website. A live Discord acceptance test of layouts, permissions and private replies is still required.
 
 Configure one or both HTTPS RPC endpoints in `.env`: `ETHEREUM_RPC_URL` and `POLYGON_RPC_URL`. Use your Alchemy mainnet endpoints. A missing endpoint disables proof creation on that network without breaking `/help` or wallet management.
 

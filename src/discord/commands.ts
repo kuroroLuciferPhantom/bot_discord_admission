@@ -59,6 +59,17 @@ function ruleOptions(command: SlashCommandSubcommandBuilder) {
 
 export const commands = [
   new SlashCommandBuilder()
+    .setName("panel")
+    .setDescription(
+      "Publish the permanent member button panel in this channel.",
+    )
+    .setContexts(InteractionContextType.Guild)
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addSubcommand((c) =>
+      c.setName("publish").setDescription("Publish the member panel."),
+    )
+    .toJSON(),
+  new SlashCommandBuilder()
     .setName("rules")
     .setDescription("Administer NFT role thresholds.")
     .setContexts(InteractionContextType.Guild)

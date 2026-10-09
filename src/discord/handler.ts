@@ -7,6 +7,7 @@ import { WalletError } from "../wallets/domain.js";
 import { RoleError } from "../roles/domain.js";
 import { roleCommand, roleErrorMessage } from "./roles.js";
 import type { RoleService } from "../roles/service.js";
+import { panelCommand, memberActions } from "./panel.js";
 
 export async function handleCommand(
   interaction: ChatInputCommandInteraction,
@@ -27,6 +28,10 @@ export async function handleCommand(
       await walletCommand(interaction, wallets, roles);
       return;
     }
+    if (interaction.commandName === "panel") {
+      await panelCommand(interaction);
+      return;
+    }
     if (
       ["rules", "roles", "settings"].includes(interaction.commandName) &&
       roles
@@ -40,7 +45,11 @@ export async function handleCommand(
       return;
     }
     await store.ensureGuild(interaction.guildId);
-    await interaction.editReply(messages.en.help);
+    await interaction.editReply({
+      content: messages.en.help,
+      components: [memberActions()],
+      allowedMentions: { parse: [] },
+    });
   } catch (error) {
     if (!(error instanceof WalletError) && !(error instanceof RoleError))
       reportFailure();

@@ -19,7 +19,7 @@ import {
 } from "../wallets/domain.js";
 import type { WalletService } from "../wallets/service.js";
 import type { RoleService } from "../roles/service.js";
-async function refreshAfterChange(
+export async function refreshAfterChange(
   roles: RoleService | undefined,
   guildId: string,
   userId: string,
@@ -92,7 +92,7 @@ export function challengeReply(challenge: Challenge) {
   };
 }
 
-function addModal(chainId: ChainId) {
+export function addModal(chainId: ChainId) {
   return new ModalBuilder()
     .setCustomId(`wallet:add:${chainId}`)
     .setTitle("Add your wallet")
