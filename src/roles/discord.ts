@@ -17,6 +17,11 @@ const dangerous =
   PermissionFlagsBits.ManageMessages |
   PermissionFlagsBits.ModerateMembers |
   PermissionFlagsBits.ManageThreads |
+  PermissionFlagsBits.ManageNicknames |
+  PermissionFlagsBits.ManageGuildExpressions |
+  PermissionFlagsBits.ManageEvents |
+  PermissionFlagsBits.PinMessages |
+  PermissionFlagsBits.BypassSlowmode |
   PermissionFlagsBits.MentionEveryone |
   PermissionFlagsBits.MuteMembers |
   PermissionFlagsBits.DeafenMembers |

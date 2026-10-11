@@ -138,6 +138,46 @@ describe("key validation and provider selection", () => {
       await expect(validateKey(key, fetcher)).rejects.toThrow("unavailable");
     },
   );
+  it.each(["rpc", "nft"])(
+    "cancels oversized %s validation replies without replacing credentials",
+    async (kind) => {
+      const cancel = vi.fn();
+      const fetcher = vi.fn(async (url: unknown) => {
+        const nft = String(url).includes("/nft/");
+        if (nft === (kind === "nft")) {
+          return new Response(
+            new ReadableStream<Uint8Array>(
+              {
+                pull(controller) {
+                  controller.enqueue(
+                    new Uint8Array(kind === "nft" ? 100001 : 10001),
+                  );
+                },
+                cancel,
+              },
+              { highWaterMark: 0 },
+            ),
+          );
+        }
+        return new Response(
+          JSON.stringify(
+            nft
+              ? { ownedNfts: [] }
+              : {
+                  result: String(url).includes("eth-mainnet") ? "0x1" : "0x89",
+                },
+          ),
+        );
+      });
+      const f = fixture();
+      const settings = new AlchemySettings(f.vault, new GuildGate(), (value) =>
+        validateKey(value, fetcher),
+      );
+      await expect(settings.save("guild", key)).rejects.toThrow("unavailable");
+      expect(cancel).toHaveBeenCalledTimes(2);
+      expect(f.vault.save).not.toHaveBeenCalled();
+    },
+  );
   it("uses fallback only when no guild key exists, never for locked keys", async () => {
     const f = fixture(),
       fallbackHoldings = { read: vi.fn() },

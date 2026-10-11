@@ -1,5 +1,6 @@
 import { RoleError, uint256 } from "./domain.js";
 import type { ChainId } from "../wallets/domain.js";
+import { readJson } from "../alchemy/json.js";
 
 export interface HoldingsReader {
   read(
@@ -24,6 +25,7 @@ export function createHoldingsReader(
         >();
         const cursors = new Set<string>();
         let cursor: string | undefined;
+        let totalCount: number | undefined;
         for (let page = 0; page < 10; page++) {
           const url = new URL(base.replace(/\/$/, "") + "/getNFTsForOwner");
           url.searchParams.set("owner", owner);
@@ -32,10 +34,7 @@ export function createHoldingsReader(
           url.searchParams.set("pageSize", "100");
           if (cursor) url.searchParams.set("pageKey", cursor);
           const response = await fetcher(url, { signal, redirect: "error" });
-          if (!response.ok) throw new RoleError("provider");
-          const text = await response.text();
-          if (text.length > 2_000_000) throw new RoleError("provider");
-          const data: unknown = JSON.parse(text);
+          const data = await readJson(response, 2_000_000, signal);
           if (
             !data ||
             typeof data !== "object" ||
@@ -44,6 +43,15 @@ export function createHoldingsReader(
             data.ownedNfts.length > 100
           )
             throw new RoleError("provider");
+          if (
+            !("totalCount" in data) ||
+            typeof data.totalCount !== "number" ||
+            !Number.isSafeInteger(data.totalCount) ||
+            data.totalCount < 0 ||
+            (totalCount !== undefined && data.totalCount !== totalCount)
+          )
+            throw new RoleError("provider");
+          totalCount = data.totalCount;
           for (const nft of data.ownedNfts) {
             if (
               !nft ||
@@ -67,7 +75,11 @@ export function createHoldingsReader(
             });
           }
           const next = "pageKey" in data ? data.pageKey : undefined;
-          if (next === undefined || next === null) return balances;
+          if (balances.size > totalCount) throw new RoleError("provider");
+          if (next === undefined || next === null) {
+            if (balances.size !== totalCount) throw new RoleError("provider");
+            return balances;
+          }
           if (
             typeof next !== "string" ||
             !next ||

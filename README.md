@@ -81,6 +81,8 @@ The bot refuses managed roles, @everyone, roles above/equal to itself and admini
 
 Alchemy queries are contract-filtered, metadata-free and paginated. Failed, malformed, duplicated or truncated responses do not cause any role changes. There is a thirty-second inventory deadline, ten pages maximum per wallet/contract, twenty rules per server and a manual refresh cooldown of one minute. Counts rely on Alchemy's indexed ownership view, not an atomic multi-wallet block snapshot: recently transferred ERC-1155s can temporarily appear stale. Avoid promising instantaneous on-chain finality; live acceptance must check indexing behavior.
 
+Inventory pages must include a nonnegative integer `totalCount` that stays consistent across pages and matches the number of distinct tokens retrieved at completion. Missing totals or pagination inconsistencies preserve roles and trigger a provider error. API payload limits apply while reading the response stream: 2,000,000 bytes per inventory page, 10,000 bytes per validation RPC reply and 100,000 bytes per validation NFT reply. Oversized bodies are cancelled before their remaining data is downloaded.
+
 **Run one bot replica.** A shared per-guild in-process gate prevents config/wallet mutations during a refresh; independent guilds can proceed with bounded concurrency. Database job leases are not a substitute for multi-replica coordination of role/config/wallet effects.
 
 ## Scheduled checks

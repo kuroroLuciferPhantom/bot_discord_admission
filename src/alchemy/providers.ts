@@ -3,6 +3,7 @@ import { createChainReader, type ChainReader } from "../wallets/chain.js";
 import { RoleError } from "../roles/domain.js";
 import { WalletError } from "../wallets/domain.js";
 import { AlchemyError, apiKey, type AlchemyVault } from "./vault.js";
+import { readJson } from "./json.js";
 export function endpoints(value: string) {
   const key = apiKey(value);
   return {
@@ -37,13 +38,12 @@ export async function validateKey(
           signal,
           redirect: "error",
         });
-        if (!response.ok) throw new Error();
-        const text = await response.text();
-        if (text.length > 10000) throw new Error();
-        const data = JSON.parse(text);
+        const data = await readJson(response, 10000, signal);
         if (
           !data ||
-          data.error ||
+          typeof data !== "object" ||
+          "error" in data ||
+          !("result" in data) ||
           data.result !== (chain === 1 ? "0x1" : "0x89")
         )
           throw new Error();
@@ -55,12 +55,11 @@ export async function validateKey(
         nftUrl.searchParams.set("withMetadata", "false");
         nftUrl.searchParams.set("pageSize", "1");
         const nft = await fetcher(nftUrl, { signal, redirect: "error" });
-        if (!nft.ok) throw new Error();
-        const body = await nft.text();
-        if (body.length > 100000) throw new Error();
-        const inventory = JSON.parse(body);
+        const inventory = await readJson(nft, 100000, signal);
         if (
           !inventory ||
+          typeof inventory !== "object" ||
+          !("ownedNfts" in inventory) ||
           !Array.isArray(inventory.ownedNfts) ||
           inventory.ownedNfts.length > 1
         )
