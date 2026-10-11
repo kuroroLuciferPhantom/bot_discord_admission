@@ -1,5 +1,6 @@
 import {
   ActionRowBuilder,
+  AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
@@ -10,7 +11,7 @@ import {
 } from "discord.js";
 import type { WalletService } from "../wallets/service.js";
 import type { RoleService } from "../roles/service.js";
-import { RoleError } from "../roles/domain.js";
+import { RoleError, ruleQuantity } from "../roles/domain.js";
 import { WalletError } from "../wallets/domain.js";
 import { addModal, challengeReply, refreshAfterChange } from "./wallets.js";
 
@@ -30,9 +31,9 @@ export function panelReply() {
     embeds: [
       new EmbedBuilder()
         .setColor(0x5865f2)
-        .setTitle("Your NFT membership")
+        .setTitle("Your holder membership")
         .setDescription(
-          "Verify your wallets and unlock your holder roles.\n\n**1. Verify wallet** — prove ownership with a self-transfer.\n**2. Refresh roles** — claim the roles you qualify for.\n**My wallets** — manage your verified addresses.\n**My status** — view NFT quantities and eligible tiers.",
+          "Verify your wallets and unlock your holder roles.\n\n**1. Verify wallet** — prove ownership with a self-transfer.\n**2. Refresh roles** — claim the roles you qualify for.\n**My wallets** — manage your verified addresses.\n**My status** — view NFT and ERC-20 quantities and eligible tiers.",
         )
         .setFooter({
           text: "Private replies • No wallet connection • No signature or spending approval",
@@ -111,7 +112,7 @@ export async function panelButton(
     // The repository validates guild + clicking user's ownership again on confirmation.
     await interaction.editReply({
       ...common,
-      content: `Remove \`${address}\`? This may remove your NFT roles. Proof history is retained; this is not data erasure.`,
+      content: `Remove \`${address}\`? This may remove your holder roles. Proof history is retained; this is not data erasure.`,
       components: [
         new ActionRowBuilder<ButtonBuilder>().addComponents(
           button(
@@ -150,24 +151,71 @@ export async function panelButton(
     const result = await roles.inspect(guildId, userId);
     const embed = new EmbedBuilder()
       .setColor(0x5865f2)
-      .setTitle("Your NFT eligibility")
+      .setTitle("Your holder eligibility")
       .setDescription(
         "Quantities are summed across your verified wallets. This view does not change roles. Use Refresh roles to claim them. Status and refresh share a one-minute cooldown.",
       )
-      .setFooter({ text: "Indexed NFT balances may lag recent transfers." });
+      .setFooter({
+        text: "NFT balances are indexed. ERC-20 balances use an on-chain block snapshot.",
+      });
     if (!result.rules.length)
       embed.setDescription(
-        "No NFT role rules have been configured on this server yet.",
+        "No holder role rules have been configured on this server yet.",
       );
-    for (const rule of result.rules)
+    let budget = 5000;
+    let shown = 0;
+    for (const rule of result.rules) {
+      const field = {
+        name:
+          rule.assetType === "ERC20"
+            ? `${rule.group} · ERC-20`
+            : `${rule.group} · ${rule.minimum} NFT`,
+        value:
+          `<@&${rule.roleId}> · ${ruleQuantity(rule, result.counts.get(rule.id) ?? 0n)}${rule.assetType === "ERC20" ? " tokens" : ""} held · ${result.desired.includes(rule.roleId) ? "Eligible" : "Not selected"}` +
+          (rule.assetType === "ERC20"
+            ? `\nMinimum: ${ruleQuantity(rule, rule.minimum)} tokens · ${rule.decimals} decimals`
+            : ""),
+      };
+      const size = field.name.length + field.value.length;
+      if (size > budget) break;
+      embed.addFields(field);
+      budget -= size;
+      shown++;
+    }
+    const truncated = shown < result.rules.length;
+    if (truncated)
       embed.addFields({
-        name: `${rule.group} · ${rule.minimum} NFT`,
-        value: `<@&${rule.roleId}> · ${result.counts.get(rule.id) ?? 0n} held · ${result.desired.includes(rule.roleId) ? "Eligible" : "Not selected"}`,
+        name: "More rules",
+        value: `${result.rules.length - shown} additional rules. Open status.json for all exact quantities and thresholds.`,
       });
     await interaction.editReply({
       ...common,
       embeds: [embed],
       components: [memberActions()],
+      ...(truncated
+        ? {
+            files: [
+              new AttachmentBuilder(
+                Buffer.from(
+                  JSON.stringify(
+                    result.rules.map((rule) => ({
+                      ...rule,
+                      minimumTokens: ruleQuantity(rule, rule.minimum),
+                      held: ruleQuantity(
+                        rule,
+                        result.counts.get(rule.id) ?? 0n,
+                      ),
+                      eligible: result.desired.includes(rule.roleId),
+                    })),
+                    null,
+                    2,
+                  ),
+                ),
+                { name: "status.json" },
+              ),
+            ],
+          }
+        : {}),
     });
   } else throw new WalletError("notFound");
 }

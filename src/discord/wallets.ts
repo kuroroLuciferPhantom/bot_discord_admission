@@ -27,7 +27,7 @@ export async function refreshAfterChange(
   if (!roles) return "Role refresh is not configured.";
   try {
     await roles.refresh(guildId, userId, true);
-    return "NFT roles refreshed.";
+    return "Holder roles refreshed.";
   } catch {
     try {
       await roles.repo.queue(guildId, userId);

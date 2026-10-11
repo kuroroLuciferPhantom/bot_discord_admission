@@ -17,7 +17,7 @@ function ruleOptions(command: SlashCommandSubcommandBuilder) {
     .addStringOption((o) =>
       o
         .setName("network")
-        .setDescription("Collection network.")
+        .setDescription("Token or collection network.")
         .setRequired(true)
         .addChoices(
           { name: "Ethereum", value: "ethereum" },
@@ -27,7 +27,7 @@ function ruleOptions(command: SlashCommandSubcommandBuilder) {
     .addStringOption((o) =>
       o
         .setName("contract")
-        .setDescription("NFT collection contract address.")
+        .setDescription("Token or NFT collection contract address.")
         .setRequired(true)
         .setMinLength(42)
         .setMaxLength(42),
@@ -35,9 +35,9 @@ function ruleOptions(command: SlashCommandSubcommandBuilder) {
     .addStringOption((o) =>
       o
         .setName("minimum")
-        .setDescription("Minimum number of NFT copies (positive integer).")
+        .setDescription("Minimum NFT copies or ERC-20 tokens (e.g. 100.5).")
         .setRequired(true)
-        .setMaxLength(78),
+        .setMaxLength(335),
     )
     .addRoleOption((o) =>
       o
@@ -49,9 +49,20 @@ function ruleOptions(command: SlashCommandSubcommandBuilder) {
     )
     .addStringOption((o) =>
       o
+        .setName("asset-type")
+        .setDescription(
+          "Default: NFT (ERC-721/1155). Choose ERC-20 for tokens.",
+        )
+        .addChoices(
+          { name: "NFT (ERC-721 / ERC-1155)", value: "nft" },
+          { name: "ERC-20", value: "erc20" },
+        ),
+    )
+    .addStringOption((o) =>
+      o
         .setName("token-ids")
         .setDescription(
-          "Optional comma-separated token IDs; omit for the whole collection.",
+          "NFT-only comma-separated token IDs; omit for the whole collection.",
         )
         .setMaxLength(4000),
     );
@@ -71,12 +82,12 @@ export const commands = [
     .toJSON(),
   new SlashCommandBuilder()
     .setName("rules")
-    .setDescription("Administer NFT role thresholds.")
+    .setDescription("Administer NFT and ERC-20 role thresholds.")
     .setContexts(InteractionContextType.Guild)
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addSubcommand((c) =>
       ruleOptions(
-        c.setName("add").setDescription("Add an NFT role threshold."),
+        c.setName("add").setDescription("Add an NFT or ERC-20 role threshold."),
       ),
     )
     .addSubcommand((c) =>
@@ -184,12 +195,12 @@ export const commands = [
     .toJSON(),
   new SlashCommandBuilder()
     .setName("roles")
-    .setDescription("Check your NFT holdings and refresh your roles.")
+    .setDescription("Check your token holdings and refresh your roles.")
     .setContexts(InteractionContextType.Guild)
     .addSubcommand((c) =>
       c
         .setName("refresh")
-        .setDescription("Refresh your NFT roles (one request per minute)."),
+        .setDescription("Refresh your holder roles (one request per minute)."),
     )
     .toJSON(),
   new SlashCommandBuilder()

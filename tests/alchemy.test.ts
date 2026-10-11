@@ -181,18 +181,27 @@ describe("key validation and provider selection", () => {
   it("uses fallback only when no guild key exists, never for locked keys", async () => {
     const f = fixture(),
       fallbackHoldings = { read: vi.fn() },
-      fallbackChain = { snapshot: vi.fn(), proof: vi.fn() };
-    const providers = guildProviders(f.vault, fallbackHoldings, fallbackChain);
+      fallbackChain = { snapshot: vi.fn(), proof: vi.fn() },
+      fallbackTokens = { decimals: vi.fn(), read: vi.fn() };
+    const providers = guildProviders(
+      f.vault,
+      fallbackHoldings,
+      fallbackChain,
+      fallbackTokens,
+    );
     f.vault.get.mockResolvedValue(undefined);
     expect(await providers.holdings("a")).toBe(fallbackHoldings);
     expect(await providers.chain("a")).toBe(fallbackChain);
+    expect(await providers.tokens("a")).toBe(fallbackTokens);
     f.vault.get.mockResolvedValue(key);
     expect(await providers.holdings("b")).not.toBe(fallbackHoldings);
     expect(await providers.chain("b")).not.toBe(fallbackChain);
+    expect(await providers.tokens("b")).not.toBe(fallbackTokens);
     expect(f.vault.get).toHaveBeenCalledWith("b");
     f.vault.get.mockRejectedValue(new AlchemyError("locked"));
     await expect(providers.holdings("b")).rejects.toThrow("provider");
     await expect(providers.chain("b")).rejects.toThrow("unavailable");
+    await expect(providers.tokens("b")).rejects.toThrow("provider");
   });
 });
 describe("private admin Alchemy settings", () => {

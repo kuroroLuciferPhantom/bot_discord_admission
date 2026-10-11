@@ -86,11 +86,11 @@ export function createRoleGateway(client: Client): RoleGateway {
       return {
         current,
         async add(id) {
-          await member.roles.add(id, "NFT holder eligibility");
+          await member.roles.add(id, "Token holder eligibility");
         },
         async remove(id) {
           if (roles.has(id))
-            await member.roles.remove(id, "NFT holder eligibility");
+            await member.roles.remove(id, "Token holder eligibility");
         },
       };
     },

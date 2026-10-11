@@ -32,9 +32,16 @@ model RoleRule {
   tokenIds String[]
   minimum String
   roleId String
+  assetType RuleAssetType @default(NFT)
+  decimals Int?
   @@unique([guildId, roleId])
   @@unique([guildId, group, minimum])
   @@index([guildId])
+}
+
+enum RuleAssetType {
+  NFT
+  ERC20
 }
 
 model ManagedRole {

@@ -94,7 +94,7 @@ export async function alchemyCommand(
   if (sub === "alchemy-status") {
     const configured = await settings.vault.configured(guildId);
     await interaction.editReply(
-      `Server Alchemy key: ${configured ? "configured" : "not configured; host fallback applies if available"}.\nEncrypted storage: ${settings.vault.enabled ? "enabled" : "disabled"}.\nSaved keys are never displayed. A saved key takes precedence for NFT checks and wallet proofs on Ethereum and Polygon.`,
+      `Server Alchemy key: ${configured ? "configured" : "not configured; host fallback applies if available"}.\nEncrypted storage: ${settings.vault.enabled ? "enabled" : "disabled"}.\nSaved keys are never displayed. A saved key takes precedence for NFT/ERC-20 checks and wallet proofs on Ethereum and Polygon.`,
     );
   } else if (sub === "alchemy-remove") {
     if (!interaction.options.getBoolean("confirm", true))
@@ -115,6 +115,6 @@ export async function alchemyModal(
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   await settings.save(guildId, interaction.fields.getTextInputValue("api-key"));
   await interaction.editReply(
-    "Alchemy key validated and saved encrypted for this server. Ethereum and Polygon NFT checks and wallet proofs now use this key. It will never be displayed. No restart is required.",
+    "Alchemy key validated and saved encrypted for this server. Ethereum and Polygon NFT/ERC-20 checks and wallet proofs now use this key. It will never be displayed. No restart is required.",
   );
 }

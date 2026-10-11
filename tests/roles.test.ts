@@ -23,6 +23,8 @@ import { commands } from "../src/discord/commands.js";
 
 const contract = "0x1111111111111111111111111111111111111111";
 const low: Rule = {
+  assetType: "NFT",
+  decimals: null,
   id: "low",
   guildId: "guild",
   group: "apes",

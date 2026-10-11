@@ -4,6 +4,7 @@ import { RoleError } from "../roles/domain.js";
 import { WalletError } from "../wallets/domain.js";
 import { AlchemyError, apiKey, type AlchemyVault } from "./vault.js";
 import { readJson } from "./json.js";
+import { createTokenReader, type TokenReader } from "../roles/erc20.js";
 export function endpoints(value: string) {
   const key = apiKey(value);
   return {
@@ -75,8 +76,17 @@ export function guildProviders(
   vault: AlchemyVault,
   fallbackHoldings: HoldingsReader,
   fallbackChain: ChainReader,
+  fallbackTokens: TokenReader,
 ) {
   return {
+    async tokens(guildId: string) {
+      try {
+        const key = await vault.get(guildId);
+        return key ? createTokenReader(endpoints(key).rpc) : fallbackTokens;
+      } catch {
+        throw new RoleError("provider");
+      }
+    },
     async holdings(guildId: string) {
       try {
         const key = await vault.get(guildId);

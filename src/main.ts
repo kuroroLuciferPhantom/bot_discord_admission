@@ -18,6 +18,7 @@ import { RoleService } from "./roles/service.js";
 import { createRoleRepository } from "./roles/repository.js";
 import { createRoleGateway } from "./roles/discord.js";
 import { createHoldingsReader } from "./roles/alchemy.js";
+import { createTokenReader } from "./roles/erc20.js";
 import { createJobRepository } from "./jobs/repository.js";
 import { CheckWorker } from "./jobs/worker.js";
 import { panelButton, memberActions } from "./discord/panel.js";
@@ -53,11 +54,16 @@ async function main() {
       ...(config.ETHEREUM_RPC_URL ? { 1: config.ETHEREUM_RPC_URL } : {}),
       ...(config.POLYGON_RPC_URL ? { 137: config.POLYGON_RPC_URL } : {}),
     }),
+    createTokenReader({
+      ...(config.ETHEREUM_RPC_URL ? { 1: config.ETHEREUM_RPC_URL } : {}),
+      ...(config.POLYGON_RPC_URL ? { 137: config.POLYGON_RPC_URL } : {}),
+    }),
   );
   const roles = new RoleService(
     createRoleRepository(db),
     createRoleGateway(client),
     providers.holdings,
+    providers.tokens,
   );
   const alchemy = new AlchemySettings(
     createVault(db, config.ALCHEMY_ENCRYPTION_KEY),
@@ -173,7 +179,7 @@ async function main() {
   });
   try {
     await db.$queryRaw`SELECT 1 FROM "GuildSettings" LIMIT 1`;
-    await db.$queryRaw`SELECT 1 FROM "RoleRule" LIMIT 1`;
+    await db.$queryRaw`SELECT "assetType", "decimals" FROM "RoleRule" LIMIT 1`;
     await db.$queryRaw`SELECT "nextCheckAt" FROM "RoleMember" LIMIT 1`;
     await db.$queryRaw`SELECT 1 FROM "GuildAlchemyConfig" LIMIT 1`;
     if (!closing) await client.login(config.DISCORD_TOKEN);

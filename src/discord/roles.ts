@@ -4,17 +4,18 @@ import {
   PermissionFlagsBits,
   type ChatInputCommandInteraction,
 } from "discord.js";
-import { RoleError, ruleInput } from "../roles/domain.js";
+import { RoleError, ruleInput, ruleQuantity } from "../roles/domain.js";
+import { normalizeAddress } from "../wallets/domain.js";
 import type { RoleService } from "../roles/service.js";
 
 export function roleErrorMessage(error: RoleError) {
   const messages: Record<RoleError["code"], string> = {
     adminOnly: "Only server administrators can manage rules and settings.",
     invalidRule:
-      "Invalid rule. Use a positive integer threshold, valid IDs and a consistent collection/filter within a group. Each role and threshold must be unique.",
+      "Invalid rule. NFT thresholds use positive integers; ERC-20 thresholds use exact positive token quantities within the token's decimal precision, with no token-ID filter. A group must use the same asset type, contract, filter and decimals. Roles and thresholds must be unique.",
     notFound: "No matching rule exists on this server.",
     provider:
-      "NFT data is unavailable, incomplete or invalid. Existing roles were preserved. Try again later.",
+      "Token or NFT data is unavailable, incomplete or invalid. ERC-20 tokens must expose decimals(). Existing roles were preserved. Try again later.",
     permissions:
       "The bot needs Manage Roles and a role above all managed roles. Managed, everyone and administrative roles are not eligible.",
     busy: "A refresh or change is already running, or you refreshed too recently. Wait a minute and retry.",
@@ -83,18 +84,24 @@ export async function roleCommand(
       .slice((page - 1) * 5, page * 5)
       .map(
         (r) =>
-          `\`${r.id}\` — ${r.group}: **${r.minimum}** → <@&${r.roleId}>\n${r.chainId === 1 ? "Ethereum" : "Polygon"} · \`${r.contract}\` · IDs: ${r.tokenIds.length ? r.tokenIds.length + " selected" : "all"}`,
+          `\`${r.id}\` — ${r.group}: **${ruleQuantity(r, r.minimum)} ${r.assetType === "ERC20" ? "tokens" : "NFT"}** → <@&${r.roleId}>\n${r.chainId === 1 ? "Ethereum" : "Polygon"} · ${r.assetType} · \`${r.contract}\` · ${r.assetType === "ERC20" ? "decimals: " + r.decimals : "IDs: " + (r.tokenIds.length ? r.tokenIds.length + " selected" : "all")}`,
       );
     await interaction.editReply({
       content:
         `Rules page ${page} · stacking: ${snapshot.settings.roleStacking ? "enabled" : "disabled"}\n\n` +
-        (lines.join("\n\n") || "No rules on this page."),
+        (lines.join("\n\n") || "No rules on this page.").slice(0, 1800) +
+        (lines.join("\n\n").length > 1800
+          ? "\n… See rules.json for exact quantities and complete rules."
+          : ""),
       allowedMentions: { parse: [] },
       files: [
         new AttachmentBuilder(
           Buffer.from(
             JSON.stringify(
-              snapshot.rules.slice((page - 1) * 5, page * 5),
+              snapshot.rules.slice((page - 1) * 5, page * 5).map((r) => ({
+                ...r,
+                minimumTokens: ruleQuantity(r, r.minimum),
+              })),
               null,
               2,
             ),
@@ -115,17 +122,37 @@ export async function roleCommand(
       const network = interaction.options.getString("network", true);
       if (!["ethereum", "polygon"].includes(network))
         throw new RoleError("invalidRule");
+      const kind = interaction.options.getString("asset-type") ?? "nft";
+      if (!["nft", "erc20"].includes(kind)) throw new RoleError("invalidRule");
+      const assetType = kind === "erc20" ? "ERC20" : "NFT";
+      const tokenIds =
+        interaction.options
+          .getString("token-ids")
+          ?.split(",")
+          .map((id) => id.trim()) ?? [];
+      if (assetType === "ERC20" && tokenIds.length)
+        throw new RoleError("invalidRule");
+      let contract: string;
+      try {
+        contract = normalizeAddress(
+          interaction.options.getString("contract", true),
+        );
+      } catch {
+        throw new RoleError("invalidRule");
+      }
+      const chainId = network === "ethereum" ? 1 : 137;
       const input = ruleInput({
         group: interaction.options.getString("group", true),
-        chainId: network === "ethereum" ? 1 : 137,
-        contract: interaction.options.getString("contract", true),
+        chainId,
+        contract,
         minimum: interaction.options.getString("minimum", true),
         roleId: interaction.options.getRole("role", true).id,
-        tokenIds:
-          interaction.options
-            .getString("token-ids")
-            ?.split(",")
-            .map((id) => id.trim()) ?? [],
+        tokenIds,
+        assetType,
+        decimals:
+          assetType === "ERC20"
+            ? await service.tokenDecimals(guildId, chainId, contract)
+            : null,
       });
       await service.gateway.validate(guildId, input.roleId);
       const rule = await service.repo.save(
