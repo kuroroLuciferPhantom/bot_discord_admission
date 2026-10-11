@@ -115,6 +115,8 @@ Use `docker compose logs --tail=100 bot` to inspect startup. Database data lives
 
 `npm run check` generates Prisma, typechecks, runs unit tests, checks formatting and builds. CI also applies migrations twice to a fresh PostgreSQL instance, runs integration tests using the dedicated `TEST_DATABASE_URL`, and builds Docker. External Discord/Alchemy calls are not performed by tests. Never set `TEST_DATABASE_URL` to a live database: integration fixtures insert and delete test rows.
 
+CI runs `npm audit --audit-level=high` as well. Version-scoped overrides patch Prisma 7.10.0's transitive `deepmerge-ts` and `mysql2` dependencies to 8.0.0 and 3.23.1 respectively. Prisma's configuration loading, generation and PostgreSQL migrations are verified with these versions. Reassess the overrides when upgrading Prisma; they apply only to the pinned 7.10.0 packages.
+
 ## Product decisions
 
 - Self-transfer proof: Ethereum or Polygon, challenge valid for ten minutes. Native coin only; transaction must be successful, fresh and single-use.
