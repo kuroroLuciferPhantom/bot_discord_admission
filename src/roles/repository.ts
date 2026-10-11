@@ -1,5 +1,5 @@
 import { Prisma, type PrismaClient } from "../generated/prisma/client.js";
-import { RoleError, groupSource, type RuleInput } from "./domain.js";
+import { RoleError, groupSource, type NormalizedRuleInput } from "./domain.js";
 import { nextRegularCheck } from "../jobs/policy.js";
 
 export function createRoleRepository(db: PrismaClient) {
@@ -34,7 +34,7 @@ export function createRoleRepository(db: PrismaClient) {
         { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
       );
     },
-    async save(guildId: string, input: RuleInput, id?: string) {
+    async save(guildId: string, input: NormalizedRuleInput, id?: string) {
       await initialize(guildId);
       try {
         return await db.$transaction(async (tx) => {

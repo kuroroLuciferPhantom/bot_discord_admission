@@ -17,6 +17,11 @@ const dangerous =
   PermissionFlagsBits.ManageMessages |
   PermissionFlagsBits.ModerateMembers |
   PermissionFlagsBits.ManageThreads |
+  PermissionFlagsBits.ManageNicknames |
+  PermissionFlagsBits.ManageGuildExpressions |
+  PermissionFlagsBits.ManageEvents |
+  PermissionFlagsBits.PinMessages |
+  PermissionFlagsBits.BypassSlowmode |
   PermissionFlagsBits.MentionEveryone |
   PermissionFlagsBits.MuteMembers |
   PermissionFlagsBits.DeafenMembers |
@@ -81,11 +86,11 @@ export function createRoleGateway(client: Client): RoleGateway {
       return {
         current,
         async add(id) {
-          await member.roles.add(id, "NFT holder eligibility");
+          await member.roles.add(id, "Token holder eligibility");
         },
         async remove(id) {
           if (roles.has(id))
-            await member.roles.remove(id, "NFT holder eligibility");
+            await member.roles.remove(id, "Token holder eligibility");
         },
       };
     },

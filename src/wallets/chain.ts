@@ -48,10 +48,20 @@ export function createChainReader(
           client.getTransactionReceipt({ hash }),
           client.getBlockNumber({ cacheTime: 0 }),
         ]);
+        // Never combine a transaction with another transaction's success receipt,
+        // or with inclusion data from a different RPC snapshot.
+        if (
+          actualChain !== chainId ||
+          transaction.hash.toLowerCase() !== hash.toLowerCase() ||
+          receipt.transactionHash.toLowerCase() !== hash.toLowerCase() ||
+          transaction.blockNumber !== receipt.blockNumber ||
+          transaction.blockHash !== receipt.blockHash
+        )
+          throw new WalletError("unavailable");
         const block = await client.getBlock({
           blockNumber: receipt.blockNumber,
         });
-        if (!block.hash || actualChain !== chainId)
+        if (!block.hash || block.number !== receipt.blockNumber)
           throw new WalletError("unavailable");
         return {
           chainId: actualChain,

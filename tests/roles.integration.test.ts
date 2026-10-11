@@ -63,4 +63,82 @@ describe.skipIf(!url)("role rules PostgreSQL", () => {
       ).active,
     ).toBe(false);
   });
+  it("persists exact token rules, rejects mixed groups and enforces database shape", async () => {
+    if (!db) throw new Error("Missing test DB");
+    const repo = createRoleRepository(db);
+    const input = ruleInput({
+      group: "coins",
+      chainId: 1,
+      contract: "0x2222222222222222222222222222222222222222",
+      minimum: "100.5",
+      roleId: "333333333333333333",
+      tokenIds: [],
+      assetType: "ERC20",
+      decimals: 6,
+    });
+    const rule = await repo.save(guilds[0]!, input);
+    expect(rule).toMatchObject({
+      assetType: "ERC20",
+      decimals: 6,
+      minimum: "100500000",
+      tokenIds: [],
+    });
+    expect((await repo.snapshot(guilds[1]!, "user")).rules).toHaveLength(0);
+    await expect(
+      repo.save(guilds[0]!, {
+        ...input,
+        assetType: "NFT",
+        decimals: null,
+        minimum: "7",
+        roleId: "444444444444444444",
+      }),
+    ).rejects.toThrow("invalidRule");
+    await expect(
+      repo.save(guilds[0]!, {
+        ...input,
+        decimals: 18,
+        minimum: "7",
+        roleId: "444444444444444444",
+      }),
+    ).rejects.toThrow("invalidRule");
+    await expect(
+      repo.save(guilds[0]!, {
+        ...input,
+        group: "other",
+        decimals: null,
+        roleId: "444444444444444444",
+      }),
+    ).rejects.toThrow();
+    await expect(
+      repo.save(guilds[0]!, {
+        ...input,
+        group: "other",
+        tokenIds: ["1"],
+        roleId: "444444444444444444",
+      }),
+    ).rejects.toThrow();
+    await expect(
+      db.roleRule.create({
+        data: {
+          guildId: guilds[0]!,
+          ...input,
+          group: "other",
+          decimals: 256,
+          roleId: "444444444444444444",
+        },
+      }),
+    ).rejects.toThrow();
+    const oldNft = (await repo.snapshot(guilds[0]!, "user")).rules.find(
+      (r) => r.group === "apes",
+    );
+    expect(oldNft).toMatchObject({
+      assetType: "NFT",
+      decimals: null,
+      minimum: "5",
+    });
+    await repo.remove(guilds[0]!, rule.id);
+    expect((await repo.snapshot(guilds[0]!, "user")).managed).toContain(
+      rule.roleId,
+    );
+  });
 });

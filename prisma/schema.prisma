@@ -17,6 +17,12 @@ model GuildSettings {
   revision Int @default(0)
 }
 
+model GuildAlchemyConfig {
+  guildId String @id
+  ciphertext String
+  updatedAt DateTime @updatedAt
+}
+
 model RoleRule {
   id String @id @default(uuid())
   guildId String
@@ -26,9 +32,16 @@ model RoleRule {
   tokenIds String[]
   minimum String
   roleId String
+  assetType RuleAssetType @default(NFT)
+  decimals Int?
   @@unique([guildId, roleId])
   @@unique([guildId, group, minimum])
   @@index([guildId])
+}
+
+enum RuleAssetType {
+  NFT
+  ERC20
 }
 
 model ManagedRole {

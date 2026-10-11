@@ -23,6 +23,8 @@ import { commands } from "../src/discord/commands.js";
 
 const contract = "0x1111111111111111111111111111111111111111";
 const low: Rule = {
+  assetType: "NFT",
+  decimals: null,
   id: "low",
   guildId: "guild",
   group: "apes",
@@ -78,13 +80,27 @@ function fixture(wallets = ["wallet-a", "wallet-b"]) {
     service: new RoleService(repo, gateway, reader),
   };
 }
-function page(nfts: unknown[], pageKey?: string) {
+function page(nfts: unknown[], pageKey?: string, totalCount = nfts.length) {
   return new Response(
-    JSON.stringify({ ownedNfts: nfts, ...(pageKey ? { pageKey } : {}) }),
+    JSON.stringify({
+      ownedNfts: nfts,
+      totalCount,
+      ...(pageKey ? { pageKey } : {}),
+    }),
   );
 }
 
 describe("scheduled remove-only checks", () => {
+  it("resolves holdings once per guild and skips it for dormant users", async () => {
+    const f = fixture(),
+      resolve = vi.fn().mockResolvedValue(f.reader);
+    const service = new RoleService(f.repo, f.gateway, resolve);
+    await service.refresh("guild", "user");
+    expect(resolve).toHaveBeenCalledExactlyOnceWith("guild");
+    f.target.current.clear();
+    await service.check("guild", "user");
+    expect(resolve).toHaveBeenCalledTimes(1);
+  });
   it("inspection returns live quantities without role or scheduling effects", async () => {
     const f = fixture();
     const result = await f.service.inspect("guild", "user");
@@ -292,8 +308,8 @@ describe("Alchemy complete inventory", () => {
   it("paginates, filters the contract and counts token copies", async () => {
     const fetcher = vi
       .fn()
-      .mockResolvedValueOnce(page([nft()], "next"))
-      .mockResolvedValueOnce(page([nft("2", "1", "ERC721")]));
+      .mockResolvedValueOnce(page([nft()], "next", 2))
+      .mockResolvedValueOnce(page([nft("2", "1", "ERC721")], undefined, 2));
     const reader = createHoldingsReader(
       { 137: "https://alchemy.test/nft/v3/test" },
       fetcher,
@@ -321,6 +337,72 @@ describe("Alchemy complete inventory", () => {
         .size,
     ).toBe(0);
   });
+  it.each([undefined, null, "1", -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    "rejects missing or invalid inventory totals %s",
+    async (totalCount) => {
+      const reader = createHoldingsReader(
+        { 137: "https://alchemy.test" },
+        vi
+          .fn()
+          .mockResolvedValue(
+            new Response(JSON.stringify({ ownedNfts: [], totalCount })),
+          ),
+      );
+      await expect(
+        reader.read(137, "owner", contract, AbortSignal.timeout(1000)),
+      ).rejects.toThrow("provider");
+    },
+  );
+  it("preserves held roles when pagination silently omits owned tokens", async () => {
+    const f = fixture();
+    f.target.current = new Set([high.roleId]);
+    const reader = createHoldingsReader(
+      { 137: "https://alchemy.test" },
+      vi.fn().mockImplementation(() => page([nft()], undefined, 2)),
+    );
+    const service = new RoleService(f.repo, f.gateway, reader);
+    await expect(service.check("guild", "user")).rejects.toThrow("provider");
+    expect(f.target.remove).not.toHaveBeenCalled();
+    expect(f.repo.record).not.toHaveBeenCalled();
+  });
+  it("rejects totals changing between inventory pages", async () => {
+    const reader = createHoldingsReader(
+      { 137: "https://alchemy.test" },
+      vi
+        .fn()
+        .mockResolvedValueOnce(page([nft()], "next", 2))
+        .mockResolvedValueOnce(page([nft("2")], undefined, 3)),
+    );
+    await expect(
+      reader.read(137, "owner", contract, AbortSignal.timeout(1000)),
+    ).rejects.toThrow("provider");
+  });
+  it("cancels oversized inventory streams before downloading their tail", async () => {
+    const cancel = vi.fn();
+    let chunk = 0;
+    const response = new Response(
+      new ReadableStream<Uint8Array>(
+        {
+          pull(controller) {
+            if (chunk++ < 4)
+              controller.enqueue(new Uint8Array(1_000_001).fill(32));
+            else controller.close();
+          },
+          cancel,
+        },
+        { highWaterMark: 0 },
+      ),
+    );
+    const reader = createHoldingsReader(
+      { 137: "https://alchemy.test" },
+      vi.fn().mockResolvedValue(response),
+    );
+    await expect(
+      reader.read(137, "owner", contract, AbortSignal.timeout(1000)),
+    ).rejects.toThrow("provider");
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(chunk).toBe(2);
+  });
   it.each(
     [
       [nft("1", "bad")],
@@ -346,7 +428,7 @@ describe("Alchemy complete inventory", () => {
   it("rejects repeated pagination cursors", async () => {
     const reader = createHoldingsReader(
       { 137: "https://alchemy.test" },
-      vi.fn().mockImplementation(() => page([], "same")),
+      vi.fn().mockImplementation(() => page([], "same", 1000)),
     );
     await expect(
       reader.read(137, "owner", contract, AbortSignal.timeout(1000)),
@@ -356,7 +438,7 @@ describe("Alchemy complete inventory", () => {
     let cursor = 0;
     const reader = createHoldingsReader(
       { 137: "https://alchemy.test" },
-      vi.fn().mockImplementation(() => page([], String(++cursor))),
+      vi.fn().mockImplementation(() => page([], String(++cursor), 1000)),
     );
     await expect(
       reader.read(137, "owner", contract, AbortSignal.timeout(1000)),
@@ -449,6 +531,32 @@ describe("safe role synchronization", () => {
 });
 
 describe("admin and Discord role protections", () => {
+  it.each([
+    PermissionFlagsBits.ManageNicknames,
+    PermissionFlagsBits.ManageGuildExpressions,
+    PermissionFlagsBits.ManageEvents,
+    PermissionFlagsBits.PinMessages,
+    PermissionFlagsBits.BypassSlowmode,
+  ])(
+    "refuses additional moderation and management permissions %s",
+    (permission) => {
+      const guild = {
+        id: "guild",
+        members: {
+          me: {
+            permissions: { has: () => true },
+            roles: { highest: { comparePositionTo: () => 1 } },
+          },
+        },
+      } as unknown as Guild;
+      const role = {
+        id: "role",
+        managed: false,
+        permissions: { bitfield: permission },
+      } as unknown as Role;
+      expect(roleAllowed(role, guild)).toBe(false);
+    },
+  );
   it("enforces admin permission at runtime before touching storage", async () => {
     const { service, repo } = fixture();
     const event = {

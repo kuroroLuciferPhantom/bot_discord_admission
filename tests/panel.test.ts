@@ -161,6 +161,83 @@ describe("member button panel", () => {
       f.event.editReply.mock.calls[0]![0].embeds[0].toJSON().fields[0].value,
     ).toContain("25 held · Eligible");
   });
+  it("displays ERC-20 quantities in token units with full precision", async () => {
+    const f = fixture("holder:status");
+    f.roles.inspect.mockResolvedValue({
+      desired: ["role"],
+      counts: new Map([["rule", 100750000n]]),
+      rules: [
+        {
+          id: "rule",
+          roleId: "role",
+          group: "coins",
+          minimum: "100500000",
+          assetType: "ERC20",
+          decimals: 6,
+        },
+      ],
+    } as never);
+    await f.run();
+    const field =
+      f.event.editReply.mock.calls[0]![0].embeds[0].toJSON().fields[0];
+    expect(field.name).toBe("coins · ERC-20");
+    expect(field.value).toContain("100.75 tokens held · Eligible");
+    expect(field.value).toContain("Minimum: 100.5 tokens");
+    expect(f.roles.refresh).not.toHaveBeenCalled();
+  });
+  it("fits maximum token precision in Discord embed limits", async () => {
+    const f = fixture("holder:status");
+    f.roles.inspect.mockResolvedValue({
+      desired: [],
+      counts: new Map([["rule", 1n]]),
+      rules: [
+        {
+          id: "rule",
+          roleId: "role",
+          group: "x".repeat(32),
+          minimum: "1",
+          assetType: "ERC20",
+          decimals: 255,
+        },
+      ],
+    } as never);
+    await f.run();
+    const field =
+      f.event.editReply.mock.calls[0]![0].embeds[0].toJSON().fields[0];
+    expect(field.name.length).toBeLessThanOrEqual(256);
+    expect(field.value.length).toBeLessThanOrEqual(1024);
+  });
+  it("exports all exact quantities when twenty high-precision rules exceed the embed budget", async () => {
+    const f = fixture("holder:status");
+    const rules = Array.from({ length: 20 }, (_, i) => ({
+      id: "rule-" + i,
+      roleId: "111111111111111111",
+      group: "x".repeat(32),
+      minimum: "1",
+      assetType: "ERC20",
+      decimals: 255,
+    }));
+    f.roles.inspect.mockResolvedValue({
+      desired: [],
+      counts: new Map(rules.map((r) => [r.id, 1n])),
+      rules,
+    } as never);
+    await f.run();
+    const reply = f.event.editReply.mock.calls[0]![0];
+    const embed = reply.embeds[0].toJSON();
+    const size =
+      embed.title.length +
+      embed.description.length +
+      embed.footer.text.length +
+      embed.fields.reduce(
+        (sum: number, field: { name: string; value: string }) =>
+          sum + field.name.length + field.value.length,
+        0,
+      );
+    expect(size).toBeLessThanOrEqual(6000);
+    expect(reply.files[0].name).toBe("status.json");
+    expect(JSON.parse(reply.files[0].attachment.toString())).toHaveLength(20);
+  });
   it("preserves pending proof submission in the private wallet list", async () => {
     const f = fixture("holder:wallets");
     f.wallets.list.mockResolvedValue({

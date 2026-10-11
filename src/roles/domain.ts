@@ -1,4 +1,5 @@
 import { normalizeAddress } from "../wallets/domain.js";
+import { formatUnits } from "viem";
 
 export class RoleError extends Error {
   constructor(
@@ -27,8 +28,14 @@ export type Rule = {
   tokenIds: string[];
   minimum: string;
   roleId: string;
+  assetType: "NFT" | "ERC20";
+  decimals: number | null;
 };
-export type RuleInput = Omit<Rule, "id" | "guildId">;
+export type NormalizedRuleInput = Omit<Rule, "id" | "guildId">;
+export type RuleInput = Omit<NormalizedRuleInput, "assetType" | "decimals"> & {
+  assetType?: Rule["assetType"];
+  decimals?: number | null;
+};
 export const uint256 = (value: string) => {
   if (!/^(0|[1-9][0-9]{0,77}|0x[0-9a-fA-F]{1,64})$/.test(value))
     throw new RoleError("invalidRule");
@@ -36,12 +43,48 @@ export const uint256 = (value: string) => {
   if (parsed >= 2n ** 256n) throw new RoleError("invalidRule");
   return parsed.toString();
 };
-export function ruleInput(input: RuleInput): RuleInput {
+export function tokenDecimals(value: number | null | undefined): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < 0 ||
+    value > 255
+  )
+    throw new RoleError("invalidRule");
+  return value;
+}
+export function tokenMinimum(value: string, decimals: number) {
+  tokenDecimals(decimals);
+  if (value.length > 335 || !/^(0|[1-9][0-9]{0,77})(?:\.[0-9]+)?$/.test(value))
+    throw new RoleError("invalidRule");
+  const [whole, fraction = ""] = value.split(".");
+  // parseUnits rounds excessive precision; thresholds must remain exact.
+  if (fraction.length > decimals) throw new RoleError("invalidRule");
+  const amount =
+    BigInt(whole!) * 10n ** BigInt(decimals) +
+    BigInt(fraction.padEnd(decimals, "0") || "0");
+  const minimum = uint256(amount.toString());
+  if (minimum === "0") throw new RoleError("invalidRule");
+  return minimum;
+}
+export function ruleQuantity(
+  rule: Pick<Rule, "assetType" | "decimals">,
+  value: string | bigint,
+) {
+  return rule.assetType === "ERC20"
+    ? formatUnits(BigInt(value), tokenDecimals(rule.decimals))
+    : value.toString();
+}
+export function ruleInput(input: RuleInput): NormalizedRuleInput {
+  const assetType = input.assetType ?? "NFT";
   if (
     ![1, 137].includes(input.chainId) ||
     !/^[a-z0-9_-]{1,32}$/.test(input.group) ||
     !/^\d{17,20}$/.test(input.roleId) ||
-    input.tokenIds.length > 50
+    input.tokenIds.length > 50 ||
+    !["NFT", "ERC20"].includes(assetType) ||
+    (assetType === "ERC20" && input.tokenIds.length > 0) ||
+    (assetType === "NFT" && input.decimals != null)
   )
     throw new RoleError("invalidRule");
   let contract: string;
@@ -50,17 +93,23 @@ export function ruleInput(input: RuleInput): RuleInput {
   } catch {
     throw new RoleError("invalidRule");
   }
-  const minimum = uint256(input.minimum);
+  const decimals = assetType === "ERC20" ? tokenDecimals(input.decimals) : null;
+  const minimum =
+    assetType === "ERC20"
+      ? tokenMinimum(input.minimum, decimals!)
+      : uint256(input.minimum);
   if (minimum === "0") throw new RoleError("invalidRule");
   const tokenIds = [...new Set(input.tokenIds.map(uint256))].sort((a, b) =>
     BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0,
   );
-  return { ...input, contract, minimum, tokenIds };
+  return { ...input, contract, minimum, tokenIds, assetType, decimals };
 }
-export const sourceKey = (rule: Pick<Rule, "chainId" | "contract">) =>
-  `${rule.chainId}:${rule.contract}`;
-export const groupSource = (rule: RuleInput) =>
-  `${sourceKey(rule)}:${rule.tokenIds.join(",")}`;
+export const sourceKey = (
+  rule: Pick<Rule, "chainId" | "contract" | "assetType" | "decimals">,
+) =>
+  `${rule.assetType}:${rule.chainId}:${rule.contract}${rule.assetType === "ERC20" ? ":" + rule.decimals : ""}`;
+export const groupSource = (rule: NormalizedRuleInput) =>
+  `${sourceKey(rule)}:${rule.tokenIds.join(",")}:${rule.decimals ?? "-"}`;
 export type Inventory = Map<string, Map<string, bigint>>;
 export function evaluate(
   rules: Rule[],

@@ -17,7 +17,8 @@ export class WalletService {
   >();
   constructor(
     private readonly repo: WalletRepository,
-    private readonly chain: ChainReader,
+    private readonly chain:
+      ChainReader | ((guildId: string) => Promise<ChainReader>),
     private readonly clock = () => new Date(),
     private readonly mutation: <T>(
       guildId: string,
@@ -55,7 +56,11 @@ export class WalletService {
   ) {
     const address = normalizeAddress(addressInput);
     return this.bounded(userId, async () => {
-      const snapshot = await this.chain.snapshot(chainId, address);
+      const chain =
+        typeof this.chain === "function"
+          ? await this.chain(guildId)
+          : this.chain;
+      const snapshot = await chain.snapshot(chainId, address);
       if (snapshot.chainId !== chainId) throw new WalletError("unavailable");
       if (snapshot.code !== "0x") throw new WalletError("unsupportedWallet");
       return this.repo.begin({
@@ -76,7 +81,11 @@ export class WalletService {
       if (!challenge || challenge.status !== "PENDING")
         throw new WalletError("notFound");
       if (this.clock() >= challenge.expiresAt) throw new WalletError("expired");
-      const proof = await this.chain.proof(challenge.chainId as ChainId, hash);
+      const chain =
+        typeof this.chain === "function"
+          ? await this.chain(guildId)
+          : this.chain;
+      const proof = await chain.proof(challenge.chainId as ChainId, hash);
       validateProof(challenge, hash, proof, this.clock());
       await this.mutation(guildId, () =>
         this.repo.complete(guildId, userId, id, hash, this.clock()),

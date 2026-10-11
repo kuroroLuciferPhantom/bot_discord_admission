@@ -4,6 +4,7 @@ import { evaluate, RoleError, sourceKey, type Inventory } from "./domain.js";
 import type { RoleRepository } from "./repository.js";
 import type { ChainId } from "../wallets/domain.js";
 import { GuildGate } from "./gate.js";
+import type { TokenReader } from "./erc20.js";
 
 export class RoleService {
   public schedulerEnabled = false;
@@ -12,9 +13,25 @@ export class RoleService {
   constructor(
     public readonly repo: RoleRepository,
     public readonly gateway: RoleGateway,
-    private readonly reader: HoldingsReader,
+    private readonly reader:
+      HoldingsReader | ((guildId: string) => Promise<HoldingsReader>),
+    private readonly tokenReader?:
+      TokenReader | ((guildId: string) => Promise<TokenReader>),
     public readonly gate = new GuildGate(),
   ) {}
+  private async tokens(guildId: string) {
+    if (!this.tokenReader) throw new RoleError("provider");
+    return typeof this.tokenReader === "function"
+      ? this.tokenReader(guildId)
+      : this.tokenReader;
+  }
+  async tokenDecimals(guildId: string, chainId: ChainId, contract: string) {
+    return (await this.tokens(guildId)).decimals(
+      chainId,
+      contract,
+      AbortSignal.timeout(30_000),
+    );
+  }
   async refresh(guildId: string, userId: string, automatic = false) {
     return this.gate.run(guildId, () =>
       this.refreshLocked(guildId, userId, automatic),
@@ -89,12 +106,37 @@ export class RoleService {
         ...new Map(rules.map((rule) => [sourceKey(rule), rule])).values(),
       ];
       const signal = AbortSignal.timeout(30_000);
+      const reader =
+        sources.some((source) => source.assetType === "NFT") &&
+        snapshot.wallets.length
+          ? typeof this.reader === "function"
+            ? await this.reader(guildId)
+            : this.reader
+          : undefined;
+      const tokens =
+        sources.some((source) => source.assetType === "ERC20") &&
+        snapshot.wallets.length
+          ? await this.tokens(guildId)
+          : undefined;
       // Query a contract once per wallet, even if several tiers or token-ID filters use it.
       for (const source of sources) {
+        if (source.assetType === "ERC20") {
+          const total = snapshot.wallets.length
+            ? await tokens!.read(
+                source.chainId as ChainId,
+                source.contract,
+                snapshot.wallets,
+                source.decimals!,
+                signal,
+              )
+            : 0n;
+          holdings.set(sourceKey(source), new Map([["balance", total]]));
+          continue;
+        }
         const balances = new Map<string, bigint>();
         const standards = new Map<string, string>();
         for (const address of [...new Set(snapshot.wallets)]) {
-          const tokens = await this.reader.read(
+          const tokens = await reader!.read(
             source.chainId as ChainId,
             address,
             source.contract,

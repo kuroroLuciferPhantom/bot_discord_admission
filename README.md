@@ -1,10 +1,10 @@
 # Discord Holder Bot
 
-Multi-server NFT role bot. English commands, no wallet connection, no signing request, no spending approvals.
+Multi-server NFT and ERC-20 holder role bot. English commands, no wallet connection, no signing request, no spending approvals.
 
-## Current status — Lots 1–5
+## Current status — Lots 1–7
 
-Implemented: private wallet verification, ERC-1155/ERC-721 counts through Alchemy, admin rules/settings, manual role refresh, automatic refresh on verified wallet changes, durable scheduled checks and retries, dormant members, server-scoped storage, migrations, Docker Compose and CI.
+Implemented: private wallet verification, ERC-1155/ERC-721 counts through Alchemy, exact ERC-20 token balances through read-only RPC, admin rules/settings, manual role refresh, automatic refresh on verified wallet changes, durable scheduled checks and retries, dormant members, server-scoped storage, migrations, Docker Compose and CI.
 
 **Not implemented yet:** operational/commercial hardening. A real Discord/Alchemy acceptance test is still required before production. The scheduler is disabled by default until that acceptance test.
 
@@ -45,9 +45,19 @@ Proof hashes and challenge amounts remain single-use across the deployment, incl
 
 Invite the application with `bot` and `applications.commands` scopes. No privileged gateway intents are needed. Grant **Manage Roles**, and place the bot above every role it manages. Do not grant Administrator to the bot. Rules/settings require the invoking member to have Administrator, checked both at registration and runtime.
 
-## NFT roles and administration
+## Holder roles and administration
 
 Configure `ALCHEMY_API_KEY` with Ethereum and Polygon NFT API access. Register commands again after upgrading and apply all migrations before starting the bot.
+
+### Private per-server Alchemy configuration
+
+The host owner can enable encrypted server keys by setting `ALCHEMY_ENCRYPTION_KEY` to 32 random bytes encoded in canonical Base64. Generate it locally with `node -e "process.stdout.write(require('node:crypto').randomBytes(32).toString('base64'))"`, copy directly into the host's `.env`, and never share or commit its output. Recreate the bot container after changing host environment variables. Apply the Lot 6 migration and redeploy commands before using this feature.
+
+Server administrators run `/settings alchemy` to open a **blank private modal**, not pass a key as a slash-command argument. Submission rechecks Administrator and tests Ethereum/Polygon mainnet RPC plus NFT access before replacing any configuration. Replies never show the key. `/settings alchemy-status` shows configuration presence only; it does not decrypt the saved key. `/settings alchemy-remove confirm:true` deletes this server's override and restores host fallback. Deletion does not revoke the key at Alchemy.
+
+Keys are stored as randomized AES-256-GCM ciphertext authenticated to their guild ID. The master secret exists only on the host. Save it securely **separately from database backups**: losing/changing it makes saved keys unreadable. No master-key rotation workflow is provided yet; do not replace it casually. Authorized admins can recover a server by replacing its key or explicitly removing its override. Plaintext keys necessarily pass through Discord and process memory: private is not end-to-end encrypted, and Discord may retain interaction data. Never enter recovery phrases or wallet private keys. Alchemy application restrictions must permit the bot host; restrict access and budget quotas in Alchemy.
+
+A saved server key takes precedence for both NFT reads and wallet-proof RPC on both networks, without a restart. Only servers with **no saved override** use `ALCHEMY_API_KEY` (NFT) and `ETHEREUM_RPC_URL` / `POLYGON_RPC_URL` (proofs) from the host. A locked/invalid/unavailable override never silently falls back to the host key. API failures preserve roles and queue retries as before. Host fallback is a shared quota/cost decision; leave those variables unset if clients must always provide their own keys. Key validation attempts share the guild gate and are limited to once per minute per server (in memory, resets on restart). Validation makes up to four read-only calls; it proves current access, not future quota availability. No host secret is modifiable from Discord.
 
 ```text
 /rules add group:apes network:polygon contract:0x… minimum:5 role:@Holder
@@ -63,6 +73,21 @@ Configure `ALCHEMY_API_KEY` with Ethereum and Polygon NFT API access. Register c
 
 Rules can use optional `token-ids:1,2,3` (decimal or hexadecimal IDs). Omit it to count the whole collection. `edit` replaces the full rule, including its filter. `/rules list` displays five rules per page with an attached JSON file containing exact filter IDs.
 
+### ERC-20 token rules
+
+```text
+/rules add group:coins network:ethereum contract:0x… minimum:100.5 role:@TokenHolder asset-type:erc20
+/rules edit id:… group:coins network:ethereum contract:0x… minimum:250 role:@TokenHolder asset-type:erc20
+```
+
+`asset-type` defaults to `nft` for existing ERC-721/ERC-1155 commands. Choose `erc20` explicitly when adding or editing a token rule. `minimum` is entered in tokens, not raw base units: for a six-decimal token, `100.5` is stored as `100500000`. Quantities use exact integer arithmetic; zero, negatives, scientific notation, commas and excess decimal precision are rejected rather than rounded. ERC-20 rules cannot select token IDs. A tier group must keep the same network, contract, asset type, decimals and NFT filter. Existing rules migrate as NFT rules without changing thresholds.
+
+Ethereum and Polygon ERC-20 reads use the server's saved Alchemy key for RPC, or the host's corresponding `ETHEREUM_RPC_URL` / `POLYGON_RPC_URL` when no override exists. `ALCHEMY_API_KEY` remains the host fallback for NFT indexing. Tokens must expose `decimals()` with a valid `uint8` value (0–255); the bot never assumes eighteen decimals or accepts an administrator-supplied guess. Although this metadata method is optional in EIP-20, tokens without it are not supported in this release. `name()` and `symbol()` are not required or displayed.
+
+For each token contract, the bot reads all unique verified wallets at one canonical block hash using EIP-1898. The provider must support `{blockHash, requireCanonical:true}` for `eth_getCode` and `eth_call`; incompatible endpoints fail safely. Decimal metadata is rechecked at that same block before reading balances. A missing/reverted/malformed response, changed decimals, unavailable canonical block or RPC outage preserves roles and follows the existing retry policy. Tokens recently transferred after the snapshot are reflected at the next refresh. Up to five wallet balance reads run concurrently for each token contract, within the shared thirty-second refresh deadline. No token transfer, allowance request or wallet signing is performed.
+
+ERC-20 works with manual refresh, automatic refresh after a wallet change, read-only **My status**, stacking and removal-only scheduled checks. Token quantities are displayed in token units. Very long rule lists or status results include a private JSON attachment with all exact quantities. After upgrading, apply all migrations and re-register Discord commands. The new **Holder membership** panel can be republished to update existing public cards.
+
 With stacking on, every eligible threshold applies. With stacking off, only the highest eligible threshold **per group** applies. A group must use the same network, contract and normalized token-ID selection. Roles are unique per server rule; thresholds are unique within a group. Counts use integer copies for ERC-1155 and unique NFTs for ERC-721, summed over verified addresses. A duplicate ERC-721 reported on two wallets is treated as inconsistent provider data and preserves roles.
 
 `/roles refresh` is private and checks only the invoking member. Successful wallet verification and wallet removal also request a refresh. If that fails, the wallet change remains saved and the user is told to retry. Rule/settings edits apply on each member's next refresh. Removing or editing a rule retains its old role in a management registry so stale roles can be cleaned up; unrelated roles are never changed.
@@ -70,6 +95,8 @@ With stacking on, every eligible threshold applies. With stacking off, only the 
 The bot refuses managed roles, @everyone, roles above/equal to itself and administrative/moderation roles. Role operations use individual add/remove calls, never replace the member's entire role list. Additions run before removals; Discord updates are not atomic, so partial failures are reported and can be reconciled by another refresh.
 
 Alchemy queries are contract-filtered, metadata-free and paginated. Failed, malformed, duplicated or truncated responses do not cause any role changes. There is a thirty-second inventory deadline, ten pages maximum per wallet/contract, twenty rules per server and a manual refresh cooldown of one minute. Counts rely on Alchemy's indexed ownership view, not an atomic multi-wallet block snapshot: recently transferred ERC-1155s can temporarily appear stale. Avoid promising instantaneous on-chain finality; live acceptance must check indexing behavior.
+
+Inventory pages must include a nonnegative integer `totalCount` that stays consistent across pages and matches the number of distinct tokens retrieved at completion. Missing totals or pagination inconsistencies preserve roles and trigger a provider error. API payload limits apply while reading the response stream: 2,000,000 bytes per inventory page, 10,000 bytes per validation RPC reply and 100,000 bytes per validation NFT reply. Oversized bodies are cancelled before their remaining data is downloaded.
 
 **Run one bot replica.** A shared per-guild in-process gate prevents config/wallet mutations during a refresh; independent guilds can proceed with bounded concurrency. Database job leases are not a substitute for multi-replica coordination of role/config/wallet effects.
 
@@ -103,10 +130,12 @@ Use `docker compose logs --tail=100 bot` to inspect startup. Database data lives
 
 `npm run check` generates Prisma, typechecks, runs unit tests, checks formatting and builds. CI also applies migrations twice to a fresh PostgreSQL instance, runs integration tests using the dedicated `TEST_DATABASE_URL`, and builds Docker. External Discord/Alchemy calls are not performed by tests. Never set `TEST_DATABASE_URL` to a live database: integration fixtures insert and delete test rows.
 
+CI runs `npm audit --audit-level=high` as well. Version-scoped overrides patch Prisma 7.10.0's transitive `deepmerge-ts` and `mysql2` dependencies to 8.0.0 and 3.23.1 respectively. Prisma's configuration loading, generation and PostgreSQL migrations are verified with these versions. Reassess the overrides when upgrading Prisma; they apply only to the pinned 7.10.0 packages.
+
 ## Product decisions
 
 - Self-transfer proof: Ethereum or Polygon, challenge valid for ten minutes. Native coin only; transaction must be successful, fresh and single-use.
-- ERC-1155 first, ERC-721 supported. ERC-20 deferred.
+- ERC-1155, ERC-721 and ERC-20 supported. NFT rules count copies/IDs; ERC-20 rules use exact token balances and contract-reported decimals.
 - Sum quantities over a member's verified wallets. ERC-1155 counts copies, not distinct IDs; rules can select IDs or the whole contract.
 - Admin-only rules: network, contract, minimum quantity, role and tier group. Stacking is configurable; non-stacking selects the highest eligible tier **within a group**, never across unrelated collections.
 - Check active role holders one or two times weekly. Members with no managed roles become dormant; `/roles refresh` reactivates them when eligible.
