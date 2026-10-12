@@ -138,6 +138,25 @@ export const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addSubcommand((c) =>
       c
+        .setName("language")
+        .setDescription(
+          "Set the public panel and fallback language for this server.",
+        )
+        .addStringOption((o) =>
+          o
+            .setName("language")
+            .setDescription(
+              "Server language; private replies prefer the member's Discord language.",
+            )
+            .setRequired(true)
+            .addChoices(
+              { name: "English", value: "en" },
+              { name: "Français", value: "fr" },
+            ),
+        ),
+    )
+    .addSubcommand((c) =>
+      c
         .setName("alchemy")
         .setDescription("Privately configure this server's Alchemy API key."),
     )

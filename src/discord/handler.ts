@@ -14,6 +14,8 @@ import {
   type AlchemySettings,
 } from "./alchemy.js";
 import { AlchemyError } from "../alchemy/vault.js";
+import { supportedLanguage, withLanguage } from "./i18n.js";
+import { languageCommand, type LanguageSettings } from "./language.js";
 
 export async function handleCommand(
   interaction: ChatInputCommandInteraction,
@@ -22,11 +24,38 @@ export async function handleCommand(
   wallets?: WalletService,
   roles?: RoleService,
   alchemy?: AlchemySettings,
+  languages?: LanguageSettings,
+) {
+  return withLanguage(
+    languages?.forInteraction(interaction) ??
+      supportedLanguage(interaction.locale) ??
+      "en",
+    () =>
+      handleLocalizedCommand(
+        interaction,
+        store,
+        reportFailure,
+        wallets,
+        roles,
+        alchemy,
+        languages,
+      ),
+  );
+}
+
+async function handleLocalizedCommand(
+  interaction: ChatInputCommandInteraction,
+  store: SettingsStore,
+  reportFailure: () => void,
+  wallets?: WalletService,
+  roles?: RoleService,
+  alchemy?: AlchemySettings,
+  languages?: LanguageSettings,
 ) {
   try {
     if (!interaction.guildId) {
       await interaction.reply({
-        content: messages.en.guildOnly,
+        content: messages().guildOnly,
         flags: MessageFlags.Ephemeral,
       });
       return;
@@ -36,7 +65,18 @@ export async function handleCommand(
       return;
     }
     if (interaction.commandName === "panel") {
-      await panelCommand(interaction);
+      await panelCommand(
+        interaction,
+        languages?.guildLanguage(interaction.guildId) ?? "en",
+      );
+      return;
+    }
+    if (
+      interaction.commandName === "settings" &&
+      interaction.options.getSubcommand() === "language" &&
+      languages
+    ) {
+      await languageCommand(interaction, languages);
       return;
     }
     if (
@@ -56,12 +96,12 @@ export async function handleCommand(
     }
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     if (interaction.commandName !== "help") {
-      await interaction.editReply(messages.en.unavailable);
+      await interaction.editReply(messages().unavailable);
       return;
     }
     await store.ensureGuild(interaction.guildId);
     await interaction.editReply({
-      content: messages.en.help,
+      content: messages().help,
       components: [memberActions()],
       allowedMentions: { parse: [] },
     });

@@ -10,6 +10,7 @@ datasource db {
 
 model GuildSettings {
   guildId String @id
+  language String @default("en")
   roleStacking Boolean @default(true)
   checksPerWeek Int @default(1)
   createdAt DateTime @default(now())

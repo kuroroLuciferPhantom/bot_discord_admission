@@ -3,6 +3,8 @@ import { Client, Events, GatewayIntentBits } from "discord.js";
 import { readConfig } from "./config.js";
 import { createDatabase, createSettingsStore } from "./storage.js";
 import { handleCommand } from "./discord/handler.js";
+import { createLanguageStore, LanguageSettings } from "./discord/language.js";
+import { withLanguage } from "./discord/i18n.js";
 import {
   MessageFlags,
   type ModalSubmitInteraction,
@@ -40,6 +42,7 @@ async function main() {
   const db = createDatabase(config.DATABASE_URL);
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
   const store = createSettingsStore(db);
+  const languages = new LanguageSettings(createLanguageStore(db));
   const providers = guildProviders(
     createVault(db, config.ALCHEMY_ENCRYPTION_KEY),
     createHoldingsReader(
@@ -168,6 +171,7 @@ async function main() {
         wallets,
         roles,
         alchemy,
+        languages,
       );
     else if (
       (interaction.isModalSubmit() || interaction.isButton()) &&
@@ -175,13 +179,16 @@ async function main() {
         interaction.customId.startsWith("alchemy:") ||
         (interaction.isButton() && interaction.customId.startsWith("holder:")))
     )
-      void handleWalletInteraction(interaction);
+      void withLanguage(languages.forInteraction(interaction), () =>
+        handleWalletInteraction(interaction),
+      );
   });
   try {
     await db.$queryRaw`SELECT 1 FROM "GuildSettings" LIMIT 1`;
     await db.$queryRaw`SELECT "assetType", "decimals" FROM "RoleRule" LIMIT 1`;
     await db.$queryRaw`SELECT "nextCheckAt" FROM "RoleMember" LIMIT 1`;
     await db.$queryRaw`SELECT 1 FROM "GuildAlchemyConfig" LIMIT 1`;
+    await languages.load();
     if (!closing) await client.login(config.DISCORD_TOKEN);
   } catch {
     await shutdown();

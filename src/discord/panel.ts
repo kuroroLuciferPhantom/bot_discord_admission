@@ -1,3 +1,4 @@
+import { t, withLanguage, type Language } from "./i18n.js";
 import {
   ActionRowBuilder,
   AttachmentBuilder,
@@ -20,10 +21,10 @@ function button(id: string, label: string, style = ButtonStyle.Secondary) {
 }
 export function memberActions() {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
-    button("holder:verify", "Verify wallet", ButtonStyle.Primary),
-    button("holder:wallets", "My wallets"),
-    button("holder:refresh", "Refresh roles", ButtonStyle.Success),
-    button("holder:status", "My status"),
+    button("holder:verify", t("Verify wallet"), ButtonStyle.Primary),
+    button("holder:wallets", t("My wallets")),
+    button("holder:refresh", t("Refresh roles"), ButtonStyle.Success),
+    button("holder:status", t("My status")),
   );
 }
 export function panelReply() {
@@ -31,26 +32,35 @@ export function panelReply() {
     embeds: [
       new EmbedBuilder()
         .setColor(0x5865f2)
-        .setTitle("Your holder membership")
+        .setTitle(t("Your holder membership"))
         .setDescription(
-          "Verify your wallets and unlock your holder roles.\n\n**1. Verify wallet** — prove ownership with a self-transfer.\n**2. Refresh roles** — claim the roles you qualify for.\n**My wallets** — manage your verified addresses.\n**My status** — view NFT and ERC-20 quantities and eligible tiers.",
+          t(
+            "Verify your wallets and unlock your holder roles.\n\n**1. Verify wallet** — prove ownership with a self-transfer.\n**2. Refresh roles** — claim the roles you qualify for.\n**My wallets** — manage your verified addresses.\n**My status** — view NFT and ERC-20 quantities and eligible tiers.",
+          ),
         )
         .setFooter({
-          text: "Private replies • No wallet connection • No signature or spending approval",
+          text: t(
+            "Private replies • No wallet connection • No signature or spending approval",
+          ),
         }),
     ],
     components: [memberActions()],
     allowedMentions: { parse: [] as const },
   };
 }
-export async function panelCommand(interaction: ChatInputCommandInteraction) {
+export async function panelCommand(
+  interaction: ChatInputCommandInteraction,
+  language?: Language,
+) {
   if (
     !interaction.guildId ||
     !interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)
   )
     throw new RoleError("adminOnly");
   // This is the only public reply: no user data, addresses or holdings.
-  await interaction.reply(panelReply());
+  await interaction.reply(
+    language ? withLanguage(language, panelReply) : panelReply(),
+  );
 }
 export async function panelButton(
   interaction: ButtonInteraction,
@@ -70,8 +80,9 @@ export async function panelButton(
   if (id === "holder:verify") {
     await interaction.editReply({
       ...common,
-      content:
+      content: t(
         "Choose your verification network. Your address and proof will stay private. Self-transfers cost network gas; never send funds to the bot.",
+      ),
       components: [
         new ActionRowBuilder<ButtonBuilder>().addComponents(
           button("holder:add:1", "Ethereum · ETH"),
@@ -89,7 +100,7 @@ export async function panelButton(
           ...result.addresses.map((address, index) =>
             button(
               `holder:remove:${address}`,
-              `Remove wallet ${index + 1}`,
+              t("Remove wallet {0}", index + 1),
               ButtonStyle.Danger,
             ),
           ),
@@ -101,9 +112,9 @@ export async function panelButton(
       ...common,
       content:
         (result.addresses.length
-          ? "**Your verified wallets**\n" +
+          ? t("**Your verified wallets**\n") +
             result.addresses.map((a, i) => `${i + 1}. \`${a}\``).join("\n")
-          : "You have no verified wallets on this server.") +
+          : t("You have no verified wallets on this server.")) +
         (pending ? "\n\n" + pending.content : ""),
       components,
     });
@@ -112,15 +123,18 @@ export async function panelButton(
     // The repository validates guild + clicking user's ownership again on confirmation.
     await interaction.editReply({
       ...common,
-      content: `Remove \`${address}\`? This may remove your holder roles. Proof history is retained; this is not data erasure.`,
+      content: t(
+        "Remove `{0}`? This may remove your holder roles. Proof history is retained; this is not data erasure.",
+        address,
+      ),
       components: [
         new ActionRowBuilder<ButtonBuilder>().addComponents(
           button(
             `holder:confirm:${address}`,
-            "Confirm removal",
+            t("Confirm removal"),
             ButtonStyle.Danger,
           ),
-          button("holder:wallets", "Cancel"),
+          button("holder:wallets", t("Cancel")),
         ),
       ],
     });
@@ -133,9 +147,11 @@ export async function panelButton(
     await interaction.editReply({
       ...common,
       content: removed
-        ? "Wallet removed. " +
+        ? t("Wallet removed. ") +
           (await refreshAfterChange(roles, guildId, userId))
-        : "No verified wallet was removed. Any matching pending challenge was cancelled.",
+        : t(
+            "No verified wallet was removed. Any matching pending challenge was cancelled.",
+          ),
       components: [memberActions()],
     });
   } else if (id === "holder:refresh") {
@@ -143,24 +159,31 @@ export async function panelButton(
     await interaction.editReply({
       ...common,
       content: result.desired.length
-        ? "Roles refreshed: " + result.desired.map((r) => `<@&${r}>`).join(", ")
-        : "Roles refreshed. You do not currently qualify for a configured role.",
+        ? t("Roles refreshed: ") +
+          result.desired.map((r) => `<@&${r}>`).join(", ")
+        : t(
+            "Roles refreshed. You do not currently qualify for a configured role.",
+          ),
       components: [memberActions()],
     });
   } else if (id === "holder:status") {
     const result = await roles.inspect(guildId, userId);
     const embed = new EmbedBuilder()
       .setColor(0x5865f2)
-      .setTitle("Your holder eligibility")
+      .setTitle(t("Your holder eligibility"))
       .setDescription(
-        "Quantities are summed across your verified wallets. This view does not change roles. Use Refresh roles to claim them. Status and refresh share a one-minute cooldown.",
+        t(
+          "Quantities are summed across your verified wallets. This view does not change roles. Use Refresh roles to claim them. Status and refresh share a one-minute cooldown.",
+        ),
       )
       .setFooter({
-        text: "NFT balances are indexed. ERC-20 balances use an on-chain block snapshot.",
+        text: t(
+          "NFT balances are indexed. ERC-20 balances use an on-chain block snapshot.",
+        ),
       });
     if (!result.rules.length)
       embed.setDescription(
-        "No holder role rules have been configured on this server yet.",
+        t("No holder role rules have been configured on this server yet."),
       );
     let budget = 5000;
     let shown = 0;
@@ -171,9 +194,21 @@ export async function panelButton(
             ? `${rule.group} · ERC-20`
             : `${rule.group} · ${rule.minimum} NFT`,
         value:
-          `<@&${rule.roleId}> · ${ruleQuantity(rule, result.counts.get(rule.id) ?? 0n)}${rule.assetType === "ERC20" ? " tokens" : ""} held · ${result.desired.includes(rule.roleId) ? "Eligible" : "Not selected"}` +
+          t(
+            "<@&{0}> · {1}{2} held · {3}",
+            rule.roleId,
+            ruleQuantity(rule, result.counts.get(rule.id) ?? 0n),
+            rule.assetType === "ERC20" ? " tokens" : "",
+            result.desired.includes(rule.roleId)
+              ? t("Eligible")
+              : t("Not selected"),
+          ) +
           (rule.assetType === "ERC20"
-            ? `\nMinimum: ${ruleQuantity(rule, rule.minimum)} tokens · ${rule.decimals} decimals`
+            ? t(
+                "\nMinimum: {0} tokens · {1} decimals",
+                ruleQuantity(rule, rule.minimum),
+                rule.decimals,
+              )
             : ""),
       };
       const size = field.name.length + field.value.length;
@@ -185,8 +220,11 @@ export async function panelButton(
     const truncated = shown < result.rules.length;
     if (truncated)
       embed.addFields({
-        name: "More rules",
-        value: `${result.rules.length - shown} additional rules. Open status.json for all exact quantities and thresholds.`,
+        name: t("More rules"),
+        value: t(
+          "{0} additional rules. Open status.json for all exact quantities and thresholds.",
+          result.rules.length - shown,
+        ),
       });
     await interaction.editReply({
       ...common,

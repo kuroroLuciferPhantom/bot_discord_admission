@@ -1,3 +1,4 @@
+import { t } from "./i18n.js";
 import {
   ActionRowBuilder,
   ModalBuilder,
@@ -15,14 +16,18 @@ import { RoleError } from "../roles/domain.js";
 
 export function alchemyErrorMessage(error: AlchemyError) {
   return {
-    disabled:
+    disabled: t(
       "The bot owner must configure ALCHEMY_ENCRYPTION_KEY on the host before server keys can be saved.",
-    invalid:
+    ),
+    invalid: t(
       "Enter an Alchemy API key only, not an endpoint URL. No spaces or special characters.",
-    unavailable:
+    ),
+    unavailable: t(
       "The key could not be validated for Ethereum and Polygon RPC/NFT access. Check access, quotas and network availability. Your previous configuration was not changed.",
-    locked:
+    ),
+    locked: t(
       "The saved key cannot be decrypted. Contact the bot owner. Global fallback will not be used for this saved configuration.",
+    ),
   }[error.code];
 }
 export class AlchemySettings {
@@ -75,12 +80,12 @@ export async function alchemyCommand(
     await interaction.showModal(
       new ModalBuilder()
         .setCustomId("alchemy:save")
-        .setTitle("Server Alchemy API key")
+        .setTitle(t("Server Alchemy API key"))
         .addComponents(
           new ActionRowBuilder<TextInputBuilder>().addComponents(
             new TextInputBuilder()
               .setCustomId("api-key")
-              .setLabel("API key (private; processed by Discord)")
+              .setLabel(t("API key (private; processed by Discord)"))
               .setStyle(TextInputStyle.Short)
               .setRequired(true)
               .setMinLength(1)
@@ -94,14 +99,22 @@ export async function alchemyCommand(
   if (sub === "alchemy-status") {
     const configured = await settings.vault.configured(guildId);
     await interaction.editReply(
-      `Server Alchemy key: ${configured ? "configured" : "not configured; host fallback applies if available"}.\nEncrypted storage: ${settings.vault.enabled ? "enabled" : "disabled"}.\nSaved keys are never displayed. A saved key takes precedence for NFT/ERC-20 checks and wallet proofs on Ethereum and Polygon.`,
+      t(
+        "Server Alchemy key: {0}.\nEncrypted storage: {1}.\nSaved keys are never displayed. A saved key takes precedence for NFT/ERC-20 checks and wallet proofs on Ethereum and Polygon.",
+        configured
+          ? t("configured")
+          : t("not configured; host fallback applies if available"),
+        settings.vault.enabled ? t("enabled") : t("disabled"),
+      ),
     );
   } else if (sub === "alchemy-remove") {
     if (!interaction.options.getBoolean("confirm", true))
       throw new AlchemyError("invalid");
     await settings.remove(guildId);
     await interaction.editReply(
-      "Server key removed. Host fallback applies if available. The key was not revoked at Alchemy; revoke it there if needed.",
+      t(
+        "Server key removed. Host fallback applies if available. The key was not revoked at Alchemy; revoke it there if needed.",
+      ),
     );
   } else throw new AlchemyError("invalid");
 }
@@ -115,6 +128,8 @@ export async function alchemyModal(
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   await settings.save(guildId, interaction.fields.getTextInputValue("api-key"));
   await interaction.editReply(
-    "Alchemy key validated and saved encrypted for this server. Ethereum and Polygon NFT/ERC-20 checks and wallet proofs now use this key. It will never be displayed. No restart is required.",
+    t(
+      "Alchemy key validated and saved encrypted for this server. Ethereum and Polygon NFT/ERC-20 checks and wallet proofs now use this key. It will never be displayed. No restart is required.",
+    ),
   );
 }
