@@ -8,6 +8,14 @@ Implemented: private wallet verification, ERC-1155/ERC-721 counts through Alchem
 
 **Not implemented yet:** operational/commercial hardening. A real Discord/Alchemy acceptance test is still required before production. The scheduler is disabled by default until that acceptance test.
 
+## Languages
+
+French and English are supported; command names, option names and descriptions remain in English. An administrator can choose `/settings language language:fr` or `language:en`. Public panels use the server language. Private replies, buttons and forms prefer the member's Discord language (`fr`, `en-US`, `en-GB`), then fall back to the server language for unsupported locales, and ultimately English. The default for existing servers is English.
+
+The setting is persisted and applies immediately in the running bot, including errors and verification instructions. Existing public messages are not edited: run `/panel publish` again to update their text. Old buttons keep working because their IDs have not changed. Amounts and thresholds keep the exact decimal-point notation (e.g. `100.5`), and JSON exports, addresses, transaction hashes, role names and IDs are never translated.
+
+Apply migrations, restart/redeploy the bot and re-register Discord commands after upgrading. Language preferences load before Discord login so forms never wait for a database lookup. Like the guild mutation gate, the language cache assumes the supported **single bot replica** deployment: do not change settings directly in the database without restarting the bot. Additional languages can be added to the explicit translation catalogs without changing verification or eligibility logic.
+
 ## Requirements
 
 Node.js 24.19+, npm, PostgreSQL 17, a Discord application and a dedicated test server. Docker is optional for local development.

@@ -1,3 +1,4 @@
+import { t } from "./i18n.js";
 import {
   AttachmentBuilder,
   MessageFlags,
@@ -10,21 +11,28 @@ import type { RoleService } from "../roles/service.js";
 
 export function roleErrorMessage(error: RoleError) {
   const messages: Record<RoleError["code"], string> = {
-    adminOnly: "Only server administrators can manage rules and settings.",
-    invalidRule:
+    adminOnly: t("Only server administrators can manage rules and settings."),
+    invalidRule: t(
       "Invalid rule. NFT thresholds use positive integers; ERC-20 thresholds use exact positive token quantities within the token's decimal precision, with no token-ID filter. A group must use the same asset type, contract, filter and decimals. Roles and thresholds must be unique.",
-    notFound: "No matching rule exists on this server.",
-    provider:
+    ),
+    notFound: t("No matching rule exists on this server."),
+    provider: t(
       "Token or NFT data is unavailable, incomplete or invalid. ERC-20 tokens must expose decimals(). Existing roles were preserved. Try again later.",
-    permissions:
+    ),
+    permissions: t(
       "The bot needs Manage Roles and a role above all managed roles. Managed, everyone and administrative roles are not eligible.",
-    busy: "A refresh or change is already running, or you refreshed too recently. Wait a minute and retry.",
-    changed:
+    ),
+    busy: t(
+      "A refresh or change is already running, or you refreshed too recently. Wait a minute and retry.",
+    ),
+    changed: t(
       "Wallets or rules changed during the check. Existing roles were preserved; refresh again.",
-    partial:
+    ),
+    partial: t(
       "Discord could not complete all role changes. Some changes may have succeeded. Fix bot permissions and refresh again.",
-    limit: "This server is limited to twenty role rules in this version.",
-    memberGone: "This member is no longer on the server.",
+    ),
+    limit: t("This server is limited to twenty role rules in this version."),
+    memberGone: t("This member is no longer on the server."),
   };
   return messages[error.code];
 }
@@ -45,8 +53,13 @@ export async function roleCommand(
     const result = await service.refresh(guildId, userId);
     await interaction.editReply({
       content: result.desired.length
-        ? `Roles refreshed. Eligible roles: ${result.desired.map((id) => `<@&${id}>`).join(", ")}`
-        : "Roles refreshed. You do not currently qualify for a configured role.",
+        ? t(
+            "Roles refreshed. Eligible roles: {0}",
+            result.desired.map((id) => `<@&${id}>`).join(", "),
+          )
+        : t(
+            "Roles refreshed. You do not currently qualify for a configured role.",
+          ),
       allowedMentions: { parse: [] },
     });
     return;
@@ -55,7 +68,17 @@ export async function roleCommand(
     if (sub === "status") {
       const status = await service.repo.status(guildId);
       await interaction.editReply(
-        `Scheduler: ${service.schedulerEnabled ? "enabled" : "disabled"}\nActive members: ${status.active}\nDormant members: ${status.dormant}\nDue checks: ${status.due}\nRetrying: ${status.retrying}\nLatest successful check: ${status.lastSuccess ? "<t:" + Math.floor(status.lastSuccess.getTime() / 1000) + ":R>" : "none"}`,
+        t(
+          "Scheduler: {0}\nActive members: {1}\nDormant members: {2}\nDue checks: {3}\nRetrying: {4}\nLatest successful check: {5}",
+          service.schedulerEnabled ? t("enabled") : t("disabled"),
+          status.active,
+          status.dormant,
+          status.due,
+          status.retrying,
+          status.lastSuccess
+            ? "<t:" + Math.floor(status.lastSuccess.getTime() / 1000) + ":R>"
+            : t("none"),
+        ),
       );
       return;
     }
@@ -72,8 +95,10 @@ export async function roleCommand(
     });
     await interaction.editReply(
       sub === "check-frequency"
-        ? "Frequency saved. Active role holders will be checked at the configured interval when the scheduler is enabled."
-        : "Role stacking saved. Changes apply on the next role refresh.",
+        ? t(
+            "Frequency saved. Active role holders will be checked at the configured interval when the scheduler is enabled.",
+          )
+        : t("Role stacking saved. Changes apply on the next role refresh."),
     );
     return;
   }
@@ -84,14 +109,18 @@ export async function roleCommand(
       .slice((page - 1) * 5, page * 5)
       .map(
         (r) =>
-          `\`${r.id}\` — ${r.group}: **${ruleQuantity(r, r.minimum)} ${r.assetType === "ERC20" ? "tokens" : "NFT"}** → <@&${r.roleId}>\n${r.chainId === 1 ? "Ethereum" : "Polygon"} · ${r.assetType} · \`${r.contract}\` · ${r.assetType === "ERC20" ? "decimals: " + r.decimals : "IDs: " + (r.tokenIds.length ? r.tokenIds.length + " selected" : "all")}`,
+          `\`${r.id}\` — ${r.group}: **${ruleQuantity(r, r.minimum)} ${r.assetType === "ERC20" ? "tokens" : "NFT"}** → <@&${r.roleId}>\n${r.chainId === 1 ? "Ethereum" : "Polygon"} · ${r.assetType} · \`${r.contract}\` · ${r.assetType === "ERC20" ? t("decimals: ") + r.decimals : t("IDs: ") + (r.tokenIds.length ? r.tokenIds.length + t(" selected") : t("all"))}`,
       );
     await interaction.editReply({
       content:
-        `Rules page ${page} · stacking: ${snapshot.settings.roleStacking ? "enabled" : "disabled"}\n\n` +
-        (lines.join("\n\n") || "No rules on this page.").slice(0, 1800) +
+        t(
+          "Rules page {0} · stacking: {1}\n\n",
+          page,
+          snapshot.settings.roleStacking ? t("enabled") : t("disabled"),
+        ) +
+        (lines.join("\n\n") || t("No rules on this page.")).slice(0, 1800) +
         (lines.join("\n\n").length > 1800
-          ? "\n… See rules.json for exact quantities and complete rules."
+          ? t("\n… See rules.json for exact quantities and complete rules.")
           : ""),
       allowedMentions: { parse: [] },
       files: [
@@ -161,12 +190,17 @@ export async function roleCommand(
         sub === "edit" ? interaction.options.getString("id", true) : undefined,
       );
       await interaction.editReply(
-        `Rule saved: \`${rule.id}\`. Members can use /roles refresh to apply it.`,
+        t(
+          "Rule saved: `{0}`. Members can use /roles refresh to apply it.",
+          rule.id,
+        ),
       );
       return;
     } else throw new RoleError("invalidRule");
     await interaction.editReply(
-      "Rule removed. Its role will be removed from members on their next refresh unless another rule uses it.",
+      t(
+        "Rule removed. Its role will be removed from members on their next refresh unless another rule uses it.",
+      ),
     );
   });
 }
